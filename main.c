@@ -574,12 +574,12 @@ int Parse_Payload( unsigned char *payload, unsigned char pLength ) {
         if( code & 0x80 ) length = payload[bytesParsed++];
         else length = 1;
 				
-				//NRF_LOG_INFO("CODE:0x%02X",code);
+				//NRF_LOG_INFO("CODE:0x%02X,Payload:0x%02X,0x%02X",code,payload[bytesParsed],payload[bytesParsed + 1]);
 				
 				switch(code){
 					case 0x02:
-						poor_signal = *payload;
-						NRF_LOG_INFO("POOR_SIGNAL Quality:%03d",*payload);
+						poor_signal = payload[bytesParsed + 1];
+						NRF_LOG_INFO("POOR_SIGNAL Quality:%03d",poor_signal);
             if(poor_signal > 100)
 							sensor_contact_detected = true;
 						else
@@ -589,8 +589,8 @@ int Parse_Payload( unsigned char *payload, unsigned char pLength ) {
 
 					break;
 					case 0x03:
-						heart_rate = *payload;
-						NRF_LOG_INFO("HEART_RATE Value:%03d",*payload);
+						heart_rate = payload[bytesParsed + 1];
+						NRF_LOG_INFO("HEART_RATE Value:%03d",heart_rate);
 						if(is_connected){
 							err_code = ble_hrs_heart_rate_measurement_send(&m_hrs, heart_rate);
 								if ((err_code != NRF_SUCCESS) &&
@@ -1045,7 +1045,9 @@ int main(void)
 		
 		static int offset = 0;
 		static int16_t heheh[120];
-		static char tf_str[100];
+		static char tf_str[50];
+		static char write_str[1500];
+		memset(write_str,0,1500);
     // Enter main loop.
     for (;;)
     {
@@ -1059,17 +1061,17 @@ int main(void)
 						nrf_queue_pop(&m_accz_queue,&heheh[offset*4+3]);
 						
 						//ecg,accx,accy,accz,heart,contact
-						if(poor_signal > 100){
-							
-							size_t llength = sprintf(tf_str,"%d,%d,%d,%d,%d,%d,\r\n",
-																						heheh[offset*4],
-																						heheh[offset*4+1],
-																						heheh[offset*4+2],
-																						heheh[offset*4+3],
-																						heart_rate,poor_signal);
-							tf_write_string(tf_str,llength);
 						
-						}
+						memset(tf_str,0,50);
+						size_t llength = sprintf(tf_str,"%d,%d,%d,%d,%d,%d,\r\n",
+																					heheh[offset*4],
+																					heheh[offset*4+1],
+																					heheh[offset*4+2],
+																					heheh[offset*4+3],
+																					heart_rate,poor_signal);
+							//tf_write_string(tf_str,llength);
+						strcat(write_str,tf_str);
+					
 						
 						offset++;
 					}
@@ -1079,6 +1081,10 @@ int main(void)
 					
 					 
 					if(offset == 30){
+						
+						
+						tf_write_string(write_str,strlen(write_str));
+						memset(write_str,0,1500);
 						
 						if(is_connected){			
 						uint16_t llength = 240;
