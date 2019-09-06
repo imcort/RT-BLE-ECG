@@ -73,7 +73,7 @@
 #include "app_timer.h"
 #include "ble_nus.h"
 #include "ble_hrs.h"
-#include "app_uart.h"
+//#include "app_uart.h"
 #include "app_util_platform.h"
 #include "bsp_btn_ble.h"
 #include "nrf_pwr_mgmt.h"
@@ -81,18 +81,22 @@
 #include "nrf_drv_clock.h"
 #include "app_sdcard.h"
 
-#if defined (UART_PRESENT)
-#include "nrf_uart.h"
-#endif
-#if defined (UARTE_PRESENT)
-#include "nrf_uarte.h"
-#endif
+//#if defined (UART_PRESENT)
+//#include "nrf_uart.h"
+//#endif
+//#if defined (UARTE_PRESENT)
+//#include "nrf_uarte.h"
+//#endif
 
 #include "nrf_log.h"
 #include "nrf_log_ctrl.h"
 #include "nrf_log_default_backends.h"
 
 #include "nrf_drv_twi.h"
+#include "nrf_drv_saadc.h"
+//#include "nrf_drv_ppi.h"
+//#include "nrf_drv_timer.h"
+
 #include "app_mpu.h"
 #include "ff.h"
 #include "diskio_blkdev.h"
@@ -122,9 +126,9 @@
 #define UART_TX_BUF_SIZE                1024                                         /**< UART TX buffer size. */
 #define UART_RX_BUF_SIZE                1024                                         /**< UART RX buffer size. */
 
-#define SDC_SCK_PIN     29  ///< SDC serial clock (SCK) pin.
-#define SDC_MOSI_PIN    28  ///< SDC serial data in (DI) pin.
-#define SDC_MISO_PIN    30  ///< SDC serial data out (DO) pin.
+#define SDC_SCK_PIN     15  ///< SDC serial clock (SCK) pin.
+#define SDC_MOSI_PIN    18  ///< SDC serial data in (DI) pin.
+#define SDC_MISO_PIN    8  ///< SDC serial data out (DO) pin.
 #define SDC_CS_PIN      1  ///< SDC chip select (CS) pin.
 
 #define FILE_NAME   "heart.csv"
@@ -143,6 +147,14 @@ NRF_BLOCK_DEV_SDC_DEFINE(
          ),
          NFR_BLOCK_DEV_INFO_CONFIG("Nordic", "SDC", "1.00")
 );
+
+APP_TIMER_DEF(adc_timer);
+//static const nrf_drv_timer_t m_timer = NRF_DRV_TIMER_INSTANCE(1);
+
+//#define SAMPLES_IN_BUFFER 12
+//static nrf_saadc_value_t     m_buffer_pool[2][SAMPLES_IN_BUFFER];
+
+//static nrf_ppi_channel_t     m_ppi_channel;
 
 #define QUEUE_SIZE 1200
 
@@ -263,7 +275,54 @@ static void tf_write_string(char* str, size_t size)
     return;
 }
 
-void mpu_init(void)
+void saadc_callback(nrf_drv_saadc_evt_t const * p_event)
+{
+
+}
+
+
+static void saadc_init(void)
+{
+    ret_code_t err_code;
+	
+    nrf_saadc_channel_config_t channel_0_config = NRF_DRV_SAADC_DEFAULT_CHANNEL_CONFIG_SE(NRF_SAADC_INPUT_AIN5);
+		
+    err_code = nrf_drv_saadc_init(NULL, saadc_callback);
+    APP_ERROR_CHECK(err_code);
+
+    err_code = nrf_drv_saadc_channel_init(0, &channel_0_config);
+    APP_ERROR_CHECK(err_code);
+
+//    err_code = nrf_drv_saadc_buffer_convert(m_buffer_pool[0], SAMPLES_IN_BUFFER);
+//    APP_ERROR_CHECK(err_code);
+
+//    err_code = nrf_drv_saadc_buffer_convert(m_buffer_pool[1], SAMPLES_IN_BUFFER);
+//    APP_ERROR_CHECK(err_code);
+
+}
+
+static void adc_timer_handler(void * p_context)
+{
+	
+	
+	nrf_saadc_value_t ssaadc_val;
+	
+	nrf_drv_saadc_sample_convert(0,&ssaadc_val);
+	
+	NRF_LOG_INFO("%d",ssaadc_val);
+	
+	nrf_queue_push(&m_ecg_queue,&ssaadc_val);
+	
+	accel_values_t acc_values;
+  app_mpu_read_accel(&acc_values);
+	nrf_queue_push(&m_accx_queue,&acc_values.x);
+	nrf_queue_push(&m_accy_queue,&acc_values.y);
+	nrf_queue_push(&m_accz_queue,&acc_values.z);
+	
+
+}
+
+static void mpu_init(void)
 {
     ret_code_t ret_code;
     // Initiate MPU driver
@@ -312,6 +371,8 @@ static void timers_init(void)
 {
     ret_code_t err_code = app_timer_init();
     APP_ERROR_CHECK(err_code);
+	  err_code = app_timer_create(&adc_timer, APP_TIMER_MODE_REPEATED, adc_timer_handler);
+    APP_ERROR_CHECK(err_code); 
 }
 
 /**@brief Function for the GAP initialization.
@@ -370,23 +431,23 @@ static void nus_data_handler(ble_nus_evt_t * p_evt)
 
     if (p_evt->type == BLE_NUS_EVT_RX_DATA)
     {
-        uint32_t err_code;
+//        uint32_t err_code;
 
-        NRF_LOG_DEBUG("Received data from BLE NUS. Writing data on UART.");
-        NRF_LOG_HEXDUMP_DEBUG(p_evt->params.rx_data.p_data, p_evt->params.rx_data.length);
+//        NRF_LOG_DEBUG("Received data from BLE NUS. Writing data on UART.");
+//        NRF_LOG_HEXDUMP_DEBUG(p_evt->params.rx_data.p_data, p_evt->params.rx_data.length);
 
-        for (uint32_t i = 0; i < p_evt->params.rx_data.length; i++)
-        {
-            do
-            {
-                err_code = app_uart_put(p_evt->params.rx_data.p_data[i]);
-                if ((err_code != NRF_SUCCESS) && (err_code != NRF_ERROR_BUSY))
-                {
-                    NRF_LOG_ERROR("Failed receiving NUS message. Error 0x%x. ", err_code);
-                    APP_ERROR_CHECK(err_code);
-                }
-            } while (err_code == NRF_ERROR_BUSY);
-        }
+//        for (uint32_t i = 0; i < p_evt->params.rx_data.length; i++)
+//        {
+//            do
+//            {
+//                err_code = app_uart_put(p_evt->params.rx_data.p_data[i]);
+//                if ((err_code != NRF_SUCCESS) && (err_code != NRF_ERROR_BUSY))
+//                {
+//                    NRF_LOG_ERROR("Failed receiving NUS message. Error 0x%x. ", err_code);
+//                    APP_ERROR_CHECK(err_code);
+//                }
+//            } while (err_code == NRF_ERROR_BUSY);
+//        }
         //if (p_evt->params.rx_data.p_data[p_evt->params.rx_data.length - 1] == '\r')
         //{
         //    while (app_uart_put('\n') == NRF_ERROR_BUSY);
@@ -503,9 +564,9 @@ static void sleep_mode_enter(void)
 {
     uint32_t err_code = bsp_indication_set(BSP_INDICATE_IDLE);
     APP_ERROR_CHECK(err_code);
-	
-		nrf_gpio_pin_clear(ECG_CS_PIN);
-    app_uart_close();
+//	
+//		nrf_gpio_pin_clear(ECG_CS_PIN);
+//    app_uart_close();
 
     // Prepare wakeup buttons.
     err_code = bsp_btn_ble_sleep_mode_prepare();
@@ -543,213 +604,213 @@ static void on_adv_evt(ble_adv_evt_t ble_adv_evt)
 
 
 
-/**@brief   Function for handling app_uart events.
- *
- * @details This function will receive a single character from the app_uart module and append it to
- *          a string. The string will be be sent over BLE when the last character received was a
- *          'new line' '\n' (hex 0x0A) or if the string has reached the maximum data length.
- */
-/**@snippet [Handling the data received over UART] */
+///**@brief   Function for handling app_uart events.
+// *
+// * @details This function will receive a single character from the app_uart module and append it to
+// *          a string. The string will be be sent over BLE when the last character received was a
+// *          'new line' '\n' (hex 0x0A) or if the string has reached the maximum data length.
+// */
+///**@snippet [Handling the data received over UART] */
 
-int Parse_Payload( unsigned char *payload, unsigned char pLength ) {
-    unsigned char bytesParsed = 0;
-    unsigned char code;
-    unsigned char length;
-    unsigned char extendedCodeLevel;
-		ret_code_t err_code;
-		
-		int16_t ECGTemp;
-		accel_values_t acc_values;
-	
-    /* Loop until all bytes are parsed from the payload[] array... */
-    bool sensor_contact_detected = false;
-		while( bytesParsed < pLength ) {
-        /* Parse the extendedCodeLevel, code, and length */
-        extendedCodeLevel = 0;
-        while( payload[bytesParsed] == 0x55 ) {
-            extendedCodeLevel++;
-            bytesParsed++;
-        }
-        code = payload[bytesParsed++];
-        if( code & 0x80 ) length = payload[bytesParsed++];
-        else length = 1;
-				
-				//NRF_LOG_INFO("CODE:0x%02X,Payload:0x%02X,0x%02X",code,payload[bytesParsed],payload[bytesParsed + 1]);
-				
-				switch(code){
-					case 0x02:
-						poor_signal = payload[bytesParsed + 1];
-						NRF_LOG_INFO("POOR_SIGNAL Quality:%03d",poor_signal);
-            if(poor_signal > 100)
-							sensor_contact_detected = true;
-						else
-							sensor_contact_detected = false;
-					if(is_connected)
-						ble_hrs_sensor_contact_detected_update(&m_hrs, sensor_contact_detected);
+//int Parse_Payload( unsigned char *payload, unsigned char pLength ) {
+//    unsigned char bytesParsed = 0;
+//    unsigned char code;
+//    unsigned char length;
+//    unsigned char extendedCodeLevel;
+//		ret_code_t err_code;
+//		
+//		int16_t ECGTemp;
+//		accel_values_t acc_values;
+//	
+//    /* Loop until all bytes are parsed from the payload[] array... */
+//    bool sensor_contact_detected = false;
+//		while( bytesParsed < pLength ) {
+//        /* Parse the extendedCodeLevel, code, and length */
+//        extendedCodeLevel = 0;
+//        while( payload[bytesParsed] == 0x55 ) {
+//            extendedCodeLevel++;
+//            bytesParsed++;
+//        }
+//        code = payload[bytesParsed++];
+//        if( code & 0x80 ) length = payload[bytesParsed++];
+//        else length = 1;
+//				
+//				//NRF_LOG_INFO("CODE:0x%02X,Payload:0x%02X,0x%02X",code,payload[bytesParsed],payload[bytesParsed + 1]);
+//				
+//				switch(code){
+//					case 0x02:
+//						poor_signal = payload[bytesParsed + 1];
+//						NRF_LOG_INFO("POOR_SIGNAL Quality:%03d",poor_signal);
+//            if(poor_signal > 100)
+//							sensor_contact_detected = true;
+//						else
+//							sensor_contact_detected = false;
+//					if(is_connected)
+//						ble_hrs_sensor_contact_detected_update(&m_hrs, sensor_contact_detected);
 
-					break;
-					case 0x03:
-						heart_rate = payload[bytesParsed + 1];
-						NRF_LOG_INFO("HEART_RATE Value:%03d",heart_rate);
-						if(is_connected){
-							err_code = ble_hrs_heart_rate_measurement_send(&m_hrs, heart_rate);
-								if ((err_code != NRF_SUCCESS) &&
-										(err_code != NRF_ERROR_INVALID_STATE) &&
-										(err_code != NRF_ERROR_RESOURCES) &&
-										(err_code != NRF_ERROR_BUSY) &&
-										(err_code != BLE_ERROR_GATTS_SYS_ATTR_MISSING)
-									 )
-								{
-										APP_ERROR_HANDLER(err_code);
-								}
-						}
-						
-					break;
-					
-					case 0x80:
-						ECGTemp = payload[bytesParsed] << 8 | payload[bytesParsed + 1];
-						nrf_queue_push(&m_ecg_queue,&ECGTemp);
-					
-						app_mpu_read_accel(&acc_values);
-						nrf_queue_push(&m_accx_queue,&acc_values.x);
-						nrf_queue_push(&m_accy_queue,&acc_values.y);
-						nrf_queue_push(&m_accz_queue,&acc_values.z);
-					break;
-					default:
-						break;
-				
-				}
-				
-        bytesParsed += length;
-    }
-    return( 0 );
-}
+//					break;
+//					case 0x03:
+//						heart_rate = payload[bytesParsed + 1];
+//						NRF_LOG_INFO("HEART_RATE Value:%03d",heart_rate);
+//						if(is_connected){
+//							err_code = ble_hrs_heart_rate_measurement_send(&m_hrs, heart_rate);
+//								if ((err_code != NRF_SUCCESS) &&
+//										(err_code != NRF_ERROR_INVALID_STATE) &&
+//										(err_code != NRF_ERROR_RESOURCES) &&
+//										(err_code != NRF_ERROR_BUSY) &&
+//										(err_code != BLE_ERROR_GATTS_SYS_ATTR_MISSING)
+//									 )
+//								{
+//										APP_ERROR_HANDLER(err_code);
+//								}
+//						}
+//						
+//					break;
+//					
+//					case 0x80:
+//						ECGTemp = payload[bytesParsed] << 8 | payload[bytesParsed + 1];
+//						nrf_queue_push(&m_ecg_queue,&ECGTemp);
+//					
+//						app_mpu_read_accel(&acc_values);
+//						nrf_queue_push(&m_accx_queue,&acc_values.x);
+//						nrf_queue_push(&m_accy_queue,&acc_values.y);
+//						nrf_queue_push(&m_accz_queue,&acc_values.z);
+//					break;
+//					default:
+//						break;
+//				
+//				}
+//				
+//        bytesParsed += length;
+//    }
+//    return( 0 );
+//}
 
-void parseECG(uint8_t recv_char){
-	
+//void parseECG(uint8_t recv_char){
+//	
 
-static uint8_t STEP = STEP_1;
-static uint8_t offset_t = 0;
-static uint8_t plength = 0;
-static uint8_t recv_payload[170];
-int checksum = 0;
-int i;
-    switch(STEP){
+//static uint8_t STEP = STEP_1;
+//static uint8_t offset_t = 0;
+//static uint8_t plength = 0;
+//static uint8_t recv_payload[170];
+//int checksum = 0;
+//int i;
+//    switch(STEP){
 
-        case STEP_1: //SYNC-1
-						//NRF_LOG_INFO("SYNC-1,%x",recv_char);
-            if(recv_char == 0xaa)
-                STEP = STEP_2;
-            return;
-        case STEP_2: //SYNC-2
-						//NRF_LOG_INFO("SYNC-2,%x",recv_char);
-            if(recv_char == 0xaa){
-                STEP = STEP_3;
-            } else {
-                STEP = STEP_1;
-							NRF_LOG_INFO("BMD101 Parse Error");
-            }
-            return;
-        case STEP_3: //PLENGTH
-					//NRF_LOG_INFO("PLENGTH,%x",recv_char);
-            if(recv_char == 0xaa){
-                STEP = STEP_3;
-            } else if (recv_char > 170){
-                STEP = STEP_1;
-							NRF_LOG_INFO("BMD101 Parse Error(Too many chars)");
-            } else {
-                plength = recv_char;
-                memset(recv_payload,0,sizeof(recv_payload));
-                offset_t = 0;
-                STEP = STEP_4;
-            }
-            return;
-        case STEP_4: //Recv PLENGTH
-					//NRF_LOG_INFO("Recv PLENGTH,%x",recv_char);
-						recv_payload[offset_t] = recv_char;
-						offset_t++;
-            if( offset_t == plength ){
-                STEP = STEP_5;
-            }
-            return;
-        case STEP_5: //Checksum
-					//NRF_LOG_INFO("Checksum,%x",recv_char);
-						checksum = 0;
-            for(i=0;i<plength;i++){
-                checksum += recv_payload[i];
-            }
-            checksum &= 0xff;
-            checksum = ~checksum & 0xff;
-            if(checksum == recv_char){
-              Parse_Payload(recv_payload,plength);  
-							STEP = STEP_1;
-            }else{
-                STEP = STEP_1;
-							NRF_LOG_INFO("BMD101 Parse Error(Checksum)");
-            }
-            return;
-    }
-}
-
-
-void uart_event_handle(app_uart_evt_t * p_event)
-{
-    uint8_t receive_char;
-    switch (p_event->evt_type)
-    {
-        case APP_UART_DATA_READY:
-        
-            app_uart_get(&receive_char);
-            //byte_queue_push(&receive_char);
-				//nrf_queue_push(&m_byte_queue, &receive_char);
-				parseECG(receive_char);
-            break;
-
-        case APP_UART_COMMUNICATION_ERROR:
-            APP_ERROR_HANDLER(p_event->data.error_communication);
-            break;
-
-        case APP_UART_FIFO_ERROR:
-            APP_ERROR_HANDLER(p_event->data.error_code);
-            break;
-
-        default:
-            break;
-    }
-}
-/**@snippet [Handling the data received over UART] */
+//        case STEP_1: //SYNC-1
+//						//NRF_LOG_INFO("SYNC-1,%x",recv_char);
+//            if(recv_char == 0xaa)
+//                STEP = STEP_2;
+//            return;
+//        case STEP_2: //SYNC-2
+//						//NRF_LOG_INFO("SYNC-2,%x",recv_char);
+//            if(recv_char == 0xaa){
+//                STEP = STEP_3;
+//            } else {
+//                STEP = STEP_1;
+//							NRF_LOG_INFO("BMD101 Parse Error");
+//            }
+//            return;
+//        case STEP_3: //PLENGTH
+//					//NRF_LOG_INFO("PLENGTH,%x",recv_char);
+//            if(recv_char == 0xaa){
+//                STEP = STEP_3;
+//            } else if (recv_char > 170){
+//                STEP = STEP_1;
+//							NRF_LOG_INFO("BMD101 Parse Error(Too many chars)");
+//            } else {
+//                plength = recv_char;
+//                memset(recv_payload,0,sizeof(recv_payload));
+//                offset_t = 0;
+//                STEP = STEP_4;
+//            }
+//            return;
+//        case STEP_4: //Recv PLENGTH
+//					//NRF_LOG_INFO("Recv PLENGTH,%x",recv_char);
+//						recv_payload[offset_t] = recv_char;
+//						offset_t++;
+//            if( offset_t == plength ){
+//                STEP = STEP_5;
+//            }
+//            return;
+//        case STEP_5: //Checksum
+//					//NRF_LOG_INFO("Checksum,%x",recv_char);
+//						checksum = 0;
+//            for(i=0;i<plength;i++){
+//                checksum += recv_payload[i];
+//            }
+//            checksum &= 0xff;
+//            checksum = ~checksum & 0xff;
+//            if(checksum == recv_char){
+//              Parse_Payload(recv_payload,plength);  
+//							STEP = STEP_1;
+//            }else{
+//                STEP = STEP_1;
+//							NRF_LOG_INFO("BMD101 Parse Error(Checksum)");
+//            }
+//            return;
+//    }
+//}
 
 
+//void uart_event_handle(app_uart_evt_t * p_event)
+//{
+//    uint8_t receive_char;
+//    switch (p_event->evt_type)
+//    {
+//        case APP_UART_DATA_READY:
+//        
+//            app_uart_get(&receive_char);
+//            //byte_queue_push(&receive_char);
+//				//nrf_queue_push(&m_byte_queue, &receive_char);
+//				parseECG(receive_char);
+//            break;
 
-/**@brief  Function for initializing the UART module.
- */
-/**@snippet [UART Initialization] */
-static void uart_init(void)
-{
-    uint32_t                     err_code;
-    app_uart_comm_params_t const comm_params =
-    {
-        .rx_pin_no    = RX_PIN_NUMBER,
-        .tx_pin_no    = TX_PIN_NUMBER,
-        .rts_pin_no   = RTS_PIN_NUMBER,
-        .cts_pin_no   = CTS_PIN_NUMBER,
-        .flow_control = APP_UART_FLOW_CONTROL_DISABLED,
-        .use_parity   = false,
-#if defined (UART_PRESENT)
-        .baud_rate    = NRF_UART_BAUDRATE_57600
-#else
-        .baud_rate    = NRF_UARTE_BAUDRATE_57600
-#endif
-    };
+//        case APP_UART_COMMUNICATION_ERROR:
+//            APP_ERROR_HANDLER(p_event->data.error_communication);
+//            break;
 
-    APP_UART_FIFO_INIT(&comm_params,
-                       UART_RX_BUF_SIZE,
-                       UART_TX_BUF_SIZE,
-                       uart_event_handle,
-                       APP_IRQ_PRIORITY_LOWEST,
-                       err_code);
-    APP_ERROR_CHECK(err_code);
-}
+//        case APP_UART_FIFO_ERROR:
+//            APP_ERROR_HANDLER(p_event->data.error_code);
+//            break;
+
+//        default:
+//            break;
+//    }
+//}
+///**@snippet [Handling the data received over UART] */
+
+
+
+///**@brief  Function for initializing the UART module.
+// */
+///**@snippet [UART Initialization] */
+//static void uart_init(void)
+//{
+//    uint32_t                     err_code;
+//    app_uart_comm_params_t const comm_params =
+//    {
+//        .rx_pin_no    = RX_PIN_NUMBER,
+//        .tx_pin_no    = TX_PIN_NUMBER,
+//        .rts_pin_no   = RTS_PIN_NUMBER,
+//        .cts_pin_no   = CTS_PIN_NUMBER,
+//        .flow_control = APP_UART_FLOW_CONTROL_DISABLED,
+//        .use_parity   = false,
+//#if defined (UART_PRESENT)
+//        .baud_rate    = NRF_UART_BAUDRATE_57600
+//#else
+//        .baud_rate    = NRF_UARTE_BAUDRATE_57600
+//#endif
+//    };
+
+//    APP_UART_FIFO_INIT(&comm_params,
+//                       UART_RX_BUF_SIZE,
+//                       UART_TX_BUF_SIZE,
+//                       uart_event_handle,
+//                       APP_IRQ_PRIORITY_LOWEST,
+//                       err_code);
+//    APP_ERROR_CHECK(err_code);
+//}
 /**@snippet [UART Initialization] */
 
 /**@brief Function for handling BLE events.
@@ -1006,6 +1067,13 @@ static void advertising_start(void)
     APP_ERROR_CHECK(err_code);
 }
 
+static void application_timers_start(void)
+{
+    /* YOUR_JOB: Start your timers. below is an example of how to start a timer.*/
+       uint32_t err_code;
+       err_code = app_timer_start(adc_timer, APP_TIMER_TICKS(4), NULL);
+       APP_ERROR_CHECK(err_code);
+}
 
 
 
@@ -1017,9 +1085,11 @@ int main(void)
 		NRF_POWER->DCDCEN = 1;
     // Initialize.
 		nrf_drv_clock_init();
-		nrf_gpio_cfg_output(ECG_CS_PIN);
-		nrf_gpio_pin_clear(ECG_CS_PIN);
+		//nrf_gpio_cfg_output(ECG_CS_PIN);
+		//nrf_gpio_pin_clear(ECG_CS_PIN);
+		saadc_init();
 
+	
     log_init();
     timers_init();
     buttons_leds_init(&erase_bonds);
@@ -1030,7 +1100,7 @@ int main(void)
     services_init();
     advertising_init();
     conn_params_init();
-
+		
     // Start execution.
     advertising_start();
 	
@@ -1039,15 +1109,18 @@ int main(void)
 		tf_write_string(TEST_STRING,sizeof(TEST_STRING));
 		
 		
-		nrf_gpio_pin_set(ECG_CS_PIN);
+		//nrf_gpio_pin_set(ECG_CS_PIN);
 		mpu_init();
-		uart_init();
+		
+		application_timers_start();
+		//uart_init();
 		
 		static int offset = 0;
 		static int16_t heheh[120];
 		static char tf_str[50];
 		static char write_str[1500];
 		memset(write_str,0,1500);
+		//nrf_pwr_mgmt_shutdown(NRF_PWR_MGMT_SHUTDOWN_GOTO_SYSOFF);
     // Enter main loop.
     for (;;)
     {
@@ -1069,7 +1142,7 @@ int main(void)
 																					heheh[offset*4+2],
 																					heheh[offset*4+3],
 																					heart_rate,poor_signal);
-							//tf_write_string(tf_str,llength);
+						tf_write_string(tf_str,llength);
 						strcat(write_str,tf_str);
 					
 						
@@ -1083,7 +1156,7 @@ int main(void)
 					if(offset == 30){
 						
 						
-						tf_write_string(write_str,strlen(write_str));
+						//tf_write_string(write_str,strlen(write_str));
 						memset(write_str,0,1500);
 						
 						if(is_connected){			

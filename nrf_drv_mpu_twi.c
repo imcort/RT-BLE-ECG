@@ -20,8 +20,8 @@
  * and therefore I have added a conditional statement defining different pins
  * for each board. This is only for my own convenience. 
  */
-#define MPU_TWI_SCL_PIN 6
-#define MPU_TWI_SDA_PIN 8
+#define MPU_TWI_SCL_PIN 5
+#define MPU_TWI_SDA_PIN 6
 
 
 #define MPU_TWI_BUFFER_SIZE     	14 // 14 byte buffers will suffice to read acceleromter, gyroscope and temperature data in one transmission.
