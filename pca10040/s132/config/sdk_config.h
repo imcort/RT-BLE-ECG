@@ -245,7 +245,7 @@
 // <e> BLE_BAS_ENABLED - ble_bas - Battery Service
 //==========================================================
 #ifndef BLE_BAS_ENABLED
-#define BLE_BAS_ENABLED 0
+#define BLE_BAS_ENABLED 1
 #endif
 // <e> BLE_BAS_CONFIG_LOG_ENABLED - Enables logging in the module.
 //==========================================================
@@ -5951,7 +5951,7 @@
 // <2147483648=> 8 MHz 
 
 #ifndef APP_SDCARD_FREQ_DATA
-#define APP_SDCARD_FREQ_DATA 1073741824
+#define APP_SDCARD_FREQ_DATA -2147483648
 #endif
 
 // </e>

@@ -107,6 +107,8 @@
 #include "diskio_blkdev.h"
 #include "nrf_block_dev_sdc.h"
 
+#include "ble_bas.h"
+
 #define APP_BLE_CONN_CFG_TAG            1                                           /**< A tag identifying the SoftDevice BLE configuration. */
 
 #define DEVICE_NAME                     "TJUBMFE-ECG"                               /**< Name of device. Will be included in the advertising data. */
@@ -140,6 +142,7 @@
 #define TEST_STRING "SD card example."
 
 BLE_NUS_DEF(m_nus, NRF_SDH_BLE_TOTAL_LINK_COUNT);                                   /**< BLE NUS service instance. */
+BLE_BAS_DEF(m_bas);                                                 /**< Structure used to identify the battery service. */
 BLE_HRS_DEF(m_hrs);                                                 /**< Heart rate service instance. */
 NRF_BLE_GATT_DEF(m_gatt);                                                           /**< GATT module instance. */
 NRF_BLE_QWR_DEF(m_qwr);                                                             /**< Context for the Queued Write module.*/
@@ -154,6 +157,7 @@ NRF_BLOCK_DEV_SDC_DEFINE(
 );
 
 APP_TIMER_DEF(adc_timer);
+APP_TIMER_DEF(batt_timer);
 //static const nrf_drv_timer_t m_timer = NRF_DRV_TIMER_INSTANCE(1);
 
 //#define SAMPLES_IN_BUFFER 12
@@ -178,6 +182,28 @@ static ble_uuid_t m_adv_uuids[]          =                                      
 static uint8_t poor_signal = 0, heart_rate = 0;
 static bool is_connected = 0;
 static FIL file;
+
+static void batt_timer_handler(void * p_context)
+{
+    ret_code_t err_code;
+		nrf_saadc_value_t ssaadc_val;
+	
+		nrf_drv_saadc_sample_convert(1,&ssaadc_val);
+		
+		uint8_t battery_level = (ssaadc_val - 4000) / 800;
+
+    err_code = ble_bas_battery_level_update(&m_bas, battery_level, BLE_CONN_HANDLE_ALL);
+    if ((err_code != NRF_SUCCESS) &&
+        (err_code != NRF_ERROR_INVALID_STATE) &&
+        (err_code != NRF_ERROR_RESOURCES) &&
+        (err_code != NRF_ERROR_BUSY) &&
+        (err_code != BLE_ERROR_GATTS_SYS_ATTR_MISSING)
+       )
+    {
+        APP_ERROR_HANDLER(err_code);
+    }
+		
+}
 
 static void tf_disk_init(){
 
@@ -259,12 +285,6 @@ static void tf_write_string(char* str, size_t size)
     uint32_t bytes_written;
 	
     //NRF_LOG_INFO("Writing to file " FILE_NAME "...");
-    ff_result = f_open(&file, FILE_NAME, FA_READ | FA_WRITE | FA_OPEN_APPEND);
-    if (ff_result != FR_OK)
-    {
-        NRF_LOG_INFO("Unable to open or create file: " FILE_NAME ".");
-        return;
-    }
 
     ff_result = f_write(&file, str, size - 1, (UINT *) &bytes_written);
     if (ff_result != FR_OK)
@@ -276,7 +296,7 @@ static void tf_write_string(char* str, size_t size)
         //NRF_LOG_INFO("%d bytes written.", bytes_written);
     }
 
-    (void) f_close(&file);
+    
     return;
 }
 
@@ -290,12 +310,29 @@ static void saadc_init(void)
 {
     ret_code_t err_code;
 	
-    nrf_saadc_channel_config_t channel_0_config = NRF_DRV_SAADC_DEFAULT_CHANNEL_CONFIG_SE(NRF_SAADC_INPUT_AIN5);
+    //nrf_saadc_channel_config_t channel_0_config = NRF_DRV_SAADC_DEFAULT_CHANNEL_CONFIG_SE(NRF_SAADC_INPUT_AIN5);
 		
+	nrf_saadc_channel_config_t channel_0_config =
+	{                                                                    \
+    .resistor_p = NRF_SAADC_RESISTOR_DISABLED,                       \
+    .resistor_n = NRF_SAADC_RESISTOR_DISABLED,                       \
+    .gain       = NRF_SAADC_GAIN1_3,                                 \
+    .reference  = NRF_SAADC_REFERENCE_INTERNAL,                      \
+    .acq_time   = NRF_SAADC_ACQTIME_10US,                            \
+    .mode       = NRF_SAADC_MODE_DIFFERENTIAL,                       \
+    .pin_p      = (nrf_saadc_input_t)(NRF_SAADC_INPUT_AIN4),                        \
+    .pin_n      = (nrf_saadc_input_t)(NRF_SAADC_INPUT_AIN5)                         \
+};
+	
+		nrf_saadc_channel_config_t channel_1_config = NRF_DRV_SAADC_DEFAULT_CHANNEL_CONFIG_SE(NRF_SAADC_INPUT_AIN6);
+	
     err_code = nrf_drv_saadc_init(NULL, saadc_callback);
     APP_ERROR_CHECK(err_code);
 
     err_code = nrf_drv_saadc_channel_init(0, &channel_0_config);
+    APP_ERROR_CHECK(err_code);
+
+		err_code = nrf_drv_saadc_channel_init(1, &channel_1_config);
     APP_ERROR_CHECK(err_code);
 
 //    err_code = nrf_drv_saadc_buffer_convert(m_buffer_pool[0], SAMPLES_IN_BUFFER);
@@ -314,7 +351,7 @@ static void adc_timer_handler(void * p_context)
 	
 	nrf_drv_saadc_sample_convert(0,&ssaadc_val);
 	
-	NRF_LOG_INFO("%d",ssaadc_val);
+	//NRF_LOG_INFO("%d",ssaadc_val);
 	
 	nrf_queue_push(&m_ecg_queue,&ssaadc_val);
 	
@@ -378,6 +415,8 @@ static void timers_init(void)
     APP_ERROR_CHECK(err_code);
 	  err_code = app_timer_create(&adc_timer, APP_TIMER_MODE_REPEATED, adc_timer_handler);
     APP_ERROR_CHECK(err_code); 
+		err_code = app_timer_create(&batt_timer, APP_TIMER_MODE_REPEATED, batt_timer_handler);
+     APP_ERROR_CHECK(err_code); 
 }
 
 /**@brief Function for the GAP initialization.
@@ -619,6 +658,7 @@ static void services_init(void)
 {
     uint32_t           err_code;
     ble_nus_init_t     nus_init;
+		ble_bas_init_t    	bas_init;
 	  ble_hrs_init_t     hrs_init;
     nrf_ble_qwr_init_t qwr_init = {0};
 		ble_dfu_buttonless_init_t dfus_init = {0};
@@ -632,6 +672,23 @@ static void services_init(void)
 		dfus_init.evt_handler = ble_dfu_evt_handler;
 
     err_code = ble_dfu_buttonless_init(&dfus_init);
+    APP_ERROR_CHECK(err_code);
+		
+		/* YOUR_JOB: Add code to initialize the services used by the application.*/
+       // Initialize Battery Service.
+    memset(&bas_init, 0, sizeof(bas_init));
+
+    bas_init.evt_handler          = NULL;
+    bas_init.support_notification = true;
+    bas_init.p_report_ref         = NULL;
+    bas_init.initial_batt_level   = 100;
+
+    // Here the sec level for the Battery Service can be changed/increased.
+    bas_init.bl_rd_sec        = SEC_OPEN;
+    bas_init.bl_cccd_wr_sec   = SEC_OPEN;
+    bas_init.bl_report_rd_sec = SEC_OPEN;
+
+    err_code = ble_bas_init(&m_bas, &bas_init);
     APP_ERROR_CHECK(err_code);
 
     // Initialize Heart Rate Service.
@@ -1234,6 +1291,8 @@ static void application_timers_start(void)
        uint32_t err_code;
        err_code = app_timer_start(adc_timer, APP_TIMER_TICKS(4), NULL);
        APP_ERROR_CHECK(err_code);
+			err_code = app_timer_start(batt_timer, APP_TIMER_TICKS(1000), NULL);
+       APP_ERROR_CHECK(err_code);
 }
 
 
@@ -1283,6 +1342,13 @@ int main(void)
 		memset(write_str,0,1500);
 		//nrf_pwr_mgmt_shutdown(NRF_PWR_MGMT_SHUTDOWN_GOTO_SYSOFF);
     // Enter main loop.
+		FRESULT ff_result;
+		ff_result = f_open(&file, FILE_NAME, FA_READ | FA_WRITE | FA_OPEN_APPEND);
+						if (ff_result != FR_OK)
+						{
+								NRF_LOG_INFO("Unable to open or create file: " FILE_NAME ".");
+								
+						}
     for (;;)
     {
 			
@@ -1325,6 +1391,13 @@ int main(void)
 						ble_nus_data_send(&m_nus, (uint8_t*)heheh, &llength, m_conn_handle);
 						}
 						offset = 0;
+						(void) f_close(&file);
+						ff_result = f_open(&file, FILE_NAME, FA_READ | FA_WRITE | FA_OPEN_APPEND);
+						if (ff_result != FR_OK)
+						{
+								NRF_LOG_INFO("Unable to open or create file: " FILE_NAME ".");
+								
+						}
 									
 					}
 			

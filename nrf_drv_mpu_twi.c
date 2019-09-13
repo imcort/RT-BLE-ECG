@@ -81,7 +81,7 @@ uint32_t nrf_drv_mpu_init(void)
     const nrf_drv_twi_config_t twi_mpu_config = {
        .scl                = MPU_TWI_SCL_PIN,
        .sda                = MPU_TWI_SDA_PIN,
-       .frequency          = NRF_DRV_TWI_FREQ_400K,
+       .frequency          = NRF_DRV_TWI_FREQ_100K,
        .interrupt_priority = APP_IRQ_PRIORITY_HIGHEST,
        .clear_bus_init     = false
     };
