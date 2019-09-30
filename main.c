@@ -52,7 +52,7 @@
 //#define STEP_3 3
 //#define STEP_4 4
 //#define STEP_5 5
-//#define STEP_6 6
+//#define USE_TF
 
 #include <stdint.h>
 #include <string.h>
@@ -111,7 +111,7 @@
 
 #define APP_BLE_CONN_CFG_TAG            1                                           /**< A tag identifying the SoftDevice BLE configuration. */
 
-#define DEVICE_NAME                     "TJUBMFE-ECG"                               /**< Name of device. Will be included in the advertising data. */
+#define DEVICE_NAME                     "RTECG-BLE"                               /**< Name of device. Will be included in the advertising data. */
 #define NUS_SERVICE_UUID_TYPE           BLE_UUID_TYPE_VENDOR_BEGIN                  /**< UUID type for the Nordic UART Service (vendor specific). */
 
 #define APP_BLE_OBSERVER_PRIO           3                                           /**< Application's BLE observer priority. You shouldn't need to modify this value. */
@@ -183,15 +183,29 @@ static uint8_t poor_signal = 0, heart_rate = 0;
 static bool is_connected = 0;
 static FIL file;
 
+float map(float x, float in_min, float in_max, float out_min, float out_max) {
+	
+	float r = (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+	if(r > out_max)
+		r = out_max;
+	else if(r < out_min)
+		r = out_min;
+  return r;
+}
+
 static void batt_timer_handler(void * p_context)
 {
     ret_code_t err_code;
 		nrf_saadc_value_t ssaadc_val;
 	
 		nrf_drv_saadc_sample_convert(1,&ssaadc_val);
+	
+		float voltage = ssaadc_val * 1.757812f * 0.001f;
 		
-		uint8_t battery_level = (ssaadc_val - 4000) / 800;
-
+		uint8_t battery_level = map(voltage, 3.5, 4.2, 0, 100);
+	
+  	NRF_LOG_INFO("Voltage: " NRF_LOG_FLOAT_MARKER ", Batt:%d" , NRF_LOG_FLOAT(voltage), battery_level);
+	
     err_code = ble_bas_battery_level_update(&m_bas, battery_level, BLE_CONN_HANDLE_ALL);
     if ((err_code != NRF_SUCCESS) &&
         (err_code != NRF_ERROR_INVALID_STATE) &&
@@ -1031,6 +1045,26 @@ static void on_adv_evt(ble_adv_evt_t ble_adv_evt)
 //}
 /**@snippet [UART Initialization] */
 
+static void application_timers_start(void)
+{
+    /* YOUR_JOB: Start your timers. below is an example of how to start a timer.*/
+       uint32_t err_code;
+       err_code = app_timer_start(adc_timer, APP_TIMER_TICKS(4), NULL);
+       APP_ERROR_CHECK(err_code);
+			err_code = app_timer_start(batt_timer, APP_TIMER_TICKS(1000), NULL);
+       APP_ERROR_CHECK(err_code);
+}
+
+static void application_timers_stop(void)
+{
+    /* YOUR_JOB: Start your timers. below is an example of how to start a timer.*/
+       uint32_t err_code;
+       err_code = app_timer_stop(adc_timer);
+       APP_ERROR_CHECK(err_code);
+			err_code = app_timer_stop(batt_timer);
+       APP_ERROR_CHECK(err_code);
+}
+
 /**@brief Function for handling BLE events.
  *
  * @param[in]   p_ble_evt   Bluetooth stack event.
@@ -1046,6 +1080,7 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
 						
             NRF_LOG_INFO("Connected");
 						is_connected = 1;
+						//application_timers_start();
             err_code = bsp_indication_set(BSP_INDICATE_CONNECTED);
             APP_ERROR_CHECK(err_code);
             m_conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
@@ -1057,6 +1092,7 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
             
             NRF_LOG_INFO("Disconnected");
 						is_connected = 0;
+						//application_timers_stop();
             // LED indication will be changed when advertising starts.
             m_conn_handle = BLE_CONN_HANDLE_INVALID;
             break;
@@ -1285,15 +1321,6 @@ static void advertising_start(void)
     APP_ERROR_CHECK(err_code);
 }
 
-static void application_timers_start(void)
-{
-    /* YOUR_JOB: Start your timers. below is an example of how to start a timer.*/
-       uint32_t err_code;
-       err_code = app_timer_start(adc_timer, APP_TIMER_TICKS(4), NULL);
-       APP_ERROR_CHECK(err_code);
-			err_code = app_timer_start(batt_timer, APP_TIMER_TICKS(1000), NULL);
-       APP_ERROR_CHECK(err_code);
-}
 
 
 
@@ -1301,15 +1328,10 @@ static void application_timers_start(void)
  */
 int main(void)
 {
+	
     bool erase_bonds;
-		NRF_POWER->DCDCEN = 1;
     // Initialize.
 		nrf_drv_clock_init();
-		//nrf_gpio_cfg_output(ECG_CS_PIN);
-		//nrf_gpio_pin_clear(ECG_CS_PIN);
-		saadc_init();
-
-	
     log_init();
     timers_init();
     buttons_leds_init(&erase_bonds);
@@ -1320,19 +1342,31 @@ int main(void)
     services_init();
     advertising_init();
     conn_params_init();
-		
+		sd_power_dcdc_mode_set(NRF_POWER_DCDC_ENABLE);
     // Start execution.
     advertising_start();
-	
+		
+#ifdef 	USE_TF
+
 		tf_disk_init();
 		
 		tf_write_string(TEST_STRING,sizeof(TEST_STRING));
 		
+		FRESULT ff_result;
+		ff_result = f_open(&file, FILE_NAME, FA_READ | FA_WRITE | FA_OPEN_APPEND);
+		if (ff_result != FR_OK)
+		{
+				NRF_LOG_INFO("Unable to open or create file: " FILE_NAME ".");
+				
+		}
+		
+#endif		
 		
 		//nrf_gpio_pin_set(ECG_CS_PIN);
 		mpu_init();
-		
+		saadc_init();
 		application_timers_start();
+		//nrf_pwr_mgmt_shutdown(NRF_PWR_MGMT_SHUTDOWN_GOTO_SYSOFF);
 		//uart_init();
 		
 		static int offset = 0;
@@ -1340,21 +1374,16 @@ int main(void)
 		static char tf_str[50];
 		static char write_str[1500];
 		memset(write_str,0,1500);
-		//nrf_pwr_mgmt_shutdown(NRF_PWR_MGMT_SHUTDOWN_GOTO_SYSOFF);
+		
     // Enter main loop.
-		FRESULT ff_result;
-		ff_result = f_open(&file, FILE_NAME, FA_READ | FA_WRITE | FA_OPEN_APPEND);
-						if (ff_result != FR_OK)
-						{
-								NRF_LOG_INFO("Unable to open or create file: " FILE_NAME ".");
-								
-						}
+		
     for (;;)
     {
 			
 			
+			if(is_connected){
 			
-					ret_code_t ret = nrf_queue_pop(&m_ecg_queue,&heheh[offset*4]);
+				ret_code_t ret = nrf_queue_pop(&m_ecg_queue,&heheh[offset*4]);
 					if(ret == NRF_SUCCESS){
 						nrf_queue_pop(&m_accx_queue,&heheh[offset*4+1]);
 						nrf_queue_pop(&m_accy_queue,&heheh[offset*4+2]);
@@ -1369,7 +1398,9 @@ int main(void)
 																					heheh[offset*4+2],
 																					heheh[offset*4+3],
 																					heart_rate,poor_signal);
+#ifdef USE_TF						
 						tf_write_string(tf_str,llength);
+#endif						
 						strcat(write_str,tf_str);
 					
 						
@@ -1391,6 +1422,7 @@ int main(void)
 						ble_nus_data_send(&m_nus, (uint8_t*)heheh, &llength, m_conn_handle);
 						}
 						offset = 0;
+#ifdef USE_TF
 						(void) f_close(&file);
 						ff_result = f_open(&file, FILE_NAME, FA_READ | FA_WRITE | FA_OPEN_APPEND);
 						if (ff_result != FR_OK)
@@ -1398,9 +1430,13 @@ int main(void)
 								NRF_LOG_INFO("Unable to open or create file: " FILE_NAME ".");
 								
 						}
+#endif
 									
 					}
 			
+			
+			}
+				
 			
 			
       idle_state_handle();
