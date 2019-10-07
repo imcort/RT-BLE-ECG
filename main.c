@@ -47,11 +47,7 @@
  * This file contains the source code for a sample application that uses the Nordic UART service.
  * This application uses the @ref srvlib_conn_params module.
  */
-//#define STEP_1 1
-//#define STEP_2 2
-//#define STEP_3 3
-//#define STEP_4 4
-//#define STEP_5 5
+
 //#define USE_TF
 
 #include <stdint.h>
@@ -179,7 +175,7 @@ static ble_uuid_t m_adv_uuids[]          =                                      
     {BLE_UUID_NUS_SERVICE, NUS_SERVICE_UUID_TYPE}
 };
 
-static uint8_t poor_signal = 0, heart_rate = 0;
+//static uint8_t poor_signal = 0, heart_rate = 0;
 static bool is_connected = 0;
 static FIL file;
 
@@ -330,12 +326,12 @@ static void saadc_init(void)
 	{                                                                    \
     .resistor_p = NRF_SAADC_RESISTOR_DISABLED,                       \
     .resistor_n = NRF_SAADC_RESISTOR_DISABLED,                       \
-    .gain       = NRF_SAADC_GAIN1_3,                                 \
+    .gain       = NRF_SAADC_GAIN1_6,                                 \
     .reference  = NRF_SAADC_REFERENCE_INTERNAL,                      \
     .acq_time   = NRF_SAADC_ACQTIME_10US,                            \
-    .mode       = NRF_SAADC_MODE_DIFFERENTIAL,                       \
+    .mode       = NRF_SAADC_MODE_SINGLE_ENDED,                       \
     .pin_p      = (nrf_saadc_input_t)(NRF_SAADC_INPUT_AIN4),                        \
-    .pin_n      = (nrf_saadc_input_t)(NRF_SAADC_INPUT_AIN5)                         \
+    .pin_n      = NRF_SAADC_INPUT_DISABLED                        \
 };
 	
 		nrf_saadc_channel_config_t channel_1_config = NRF_DRV_SAADC_DEFAULT_CHANNEL_CONFIG_SE(NRF_SAADC_INPUT_AIN6);
@@ -1390,39 +1386,33 @@ int main(void)
 						nrf_queue_pop(&m_accz_queue,&heheh[offset*4+3]);
 						
 						//ecg,accx,accy,accz,heart,contact
-						
+#ifdef USE_TF								
 						memset(tf_str,0,50);
-						size_t llength = sprintf(tf_str,"%d,%d,%d,%d,%d,%d,\r\n",
+						size_t llength = sprintf(tf_str,"%d,%d,%d,%d\r\n",
 																					heheh[offset*4],
 																					heheh[offset*4+1],
 																					heheh[offset*4+2],
-																					heheh[offset*4+3],
-																					heart_rate,poor_signal);
-#ifdef USE_TF						
+																					heheh[offset*4+3]);
+				
 						tf_write_string(tf_str,llength);
-#endif						
+						
 						strcat(write_str,tf_str);
-					
+#endif					
 						
 						offset++;
 					}
 					
-					
-						
-					
-					 
 					if(offset == 30){
-						
-						
-						//tf_write_string(write_str,strlen(write_str));
-						memset(write_str,0,1500);
 						
 						if(is_connected){			
 						uint16_t llength = 240;
 						ble_nus_data_send(&m_nus, (uint8_t*)heheh, &llength, m_conn_handle);
 						}
-						offset = 0;
-#ifdef USE_TF
+						
+#ifdef USE_TF						
+						tf_write_string(write_str,strlen(write_str));
+						memset(write_str,0,1500);
+						
 						(void) f_close(&file);
 						ff_result = f_open(&file, FILE_NAME, FA_READ | FA_WRITE | FA_OPEN_APPEND);
 						if (ff_result != FR_OK)
@@ -1431,7 +1421,7 @@ int main(void)
 								
 						}
 #endif
-									
+							offset = 0;		
 					}
 			
 			
