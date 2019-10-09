@@ -330,8 +330,8 @@ static void saadc_init(void)
     .reference  = NRF_SAADC_REFERENCE_INTERNAL,                      \
     .acq_time   = NRF_SAADC_ACQTIME_10US,                            \
     .mode       = NRF_SAADC_MODE_SINGLE_ENDED,                       \
-    .pin_p      = (nrf_saadc_input_t)(NRF_SAADC_INPUT_AIN4),                        \
-    .pin_n      = NRF_SAADC_INPUT_DISABLED                        \
+    .pin_p      = (nrf_saadc_input_t)(NRF_SAADC_INPUT_AIN5),                        \
+    .pin_n      = (nrf_saadc_input_t)(NRF_SAADC_INPUT_AIN4)                        \
 };
 	
 		nrf_saadc_channel_config_t channel_1_config = NRF_DRV_SAADC_DEFAULT_CHANNEL_CONFIG_SE(NRF_SAADC_INPUT_AIN6);
@@ -364,13 +364,13 @@ static void adc_timer_handler(void * p_context)
 	//NRF_LOG_INFO("%d",ssaadc_val);
 	
 	nrf_queue_push(&m_ecg_queue,&ssaadc_val);
-	
+#ifdef USE_MPU
 	accel_values_t acc_values;
   app_mpu_read_accel(&acc_values);
 	nrf_queue_push(&m_accx_queue,&acc_values.x);
 	nrf_queue_push(&m_accy_queue,&acc_values.y);
 	nrf_queue_push(&m_accz_queue,&acc_values.z);
-	
+#endif
 
 }
 
@@ -1359,14 +1359,16 @@ int main(void)
 #endif		
 		
 		//nrf_gpio_pin_set(ECG_CS_PIN);
+#ifdef USE_MPU
 		mpu_init();
+#endif
 		saadc_init();
 		application_timers_start();
 		//nrf_pwr_mgmt_shutdown(NRF_PWR_MGMT_SHUTDOWN_GOTO_SYSOFF);
 		//uart_init();
 		
 		static int offset = 0;
-		static int16_t heheh[120];
+		static int16_t heheh[121];
 		static char tf_str[50];
 		static char write_str[1500];
 		memset(write_str,0,1500);
@@ -1378,13 +1380,17 @@ int main(void)
 			
 			
 			if(is_connected){
-			
+#ifdef USE_MPU			
 				ret_code_t ret = nrf_queue_pop(&m_ecg_queue,&heheh[offset*4]);
+#else
+				ret_code_t ret = nrf_queue_pop(&m_ecg_queue,&heheh[offset]);
+#endif
 					if(ret == NRF_SUCCESS){
+#ifdef USE_MPU
 						nrf_queue_pop(&m_accx_queue,&heheh[offset*4+1]);
 						nrf_queue_pop(&m_accy_queue,&heheh[offset*4+2]);
 						nrf_queue_pop(&m_accz_queue,&heheh[offset*4+3]);
-						
+#endif					
 						//ecg,accx,accy,accz,heart,contact
 #ifdef USE_TF								
 						memset(tf_str,0,50);
@@ -1401,11 +1407,17 @@ int main(void)
 						
 						offset++;
 					}
-					
+#ifdef USE_MPU					
 					if(offset == 30){
-						
+#else
+					if(offset == 120){
+#endif						
 						if(is_connected){			
+#ifdef USE_MPU
 						uint16_t llength = 240;
+#else 
+							uint16_t llength = 242;
+#endif
 						ble_nus_data_send(&m_nus, (uint8_t*)heheh, &llength, m_conn_handle);
 						}
 						
