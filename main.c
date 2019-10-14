@@ -353,6 +353,81 @@ static void saadc_init(void)
 
 }
 
+
+
+static void sssenddata(){
+	
+		static int offset = 0;
+		static int16_t heheh[121];
+#define USE_MPU_S			
+			
+			if(is_connected){
+#ifdef USE_MPU_S			
+				ret_code_t ret = nrf_queue_pop(&m_ecg_queue,&heheh[offset*4]);
+#else
+				ret_code_t ret = nrf_queue_pop(&m_ecg_queue,&heheh[offset]);
+#endif
+					if(ret == NRF_SUCCESS){
+#ifdef USE_MPU
+						nrf_queue_pop(&m_accx_queue,&heheh[offset*4+1]);
+						nrf_queue_pop(&m_accy_queue,&heheh[offset*4+2]);
+						nrf_queue_pop(&m_accz_queue,&heheh[offset*4+3]);
+#endif					
+						//ecg,accx,accy,accz,heart,contact
+#ifdef USE_TF								
+						memset(tf_str,0,50);
+						size_t llength = sprintf(tf_str,"%d,%d,%d,%d\r\n",
+																					heheh[offset*4],
+																					heheh[offset*4+1],
+																					heheh[offset*4+2],
+																					heheh[offset*4+3]);
+				
+						tf_write_string(tf_str,llength);
+						
+						strcat(write_str,tf_str);
+#endif					
+						
+						offset++;
+					}
+#ifdef USE_MPU_S					
+					if(offset == 30){
+#else
+					if(offset == 120){
+#endif						
+						if(is_connected){			
+#ifdef USE_MPU_S
+						uint16_t llength = 240;
+#else 
+							uint16_t llength = 242;
+#endif
+						ble_nus_data_send(&m_nus, (uint8_t*)heheh, &llength, m_conn_handle);
+						}
+						
+#ifdef USE_TF						
+						tf_write_string(write_str,strlen(write_str));
+						memset(write_str,0,1500);
+						
+						(void) f_close(&file);
+						ff_result = f_open(&file, FILE_NAME, FA_READ | FA_WRITE | FA_OPEN_APPEND);
+						if (ff_result != FR_OK)
+						{
+								NRF_LOG_INFO("Unable to open or create file: " FILE_NAME ".");
+								
+						}
+#endif
+							offset = 0;		
+					}
+			
+			
+			}
+				
+			
+			
+
+
+}
+
+
 static void adc_timer_handler(void * p_context)
 {
 	
@@ -364,6 +439,7 @@ static void adc_timer_handler(void * p_context)
 	//NRF_LOG_INFO("%d",ssaadc_val);
 	
 	nrf_queue_push(&m_ecg_queue,&ssaadc_val);
+	sssenddata();
 #ifdef USE_MPU
 	accel_values_t acc_values;
   app_mpu_read_accel(&acc_values);
@@ -371,6 +447,8 @@ static void adc_timer_handler(void * p_context)
 	nrf_queue_push(&m_accy_queue,&acc_values.y);
 	nrf_queue_push(&m_accz_queue,&acc_values.z);
 #endif
+	
+	
 
 }
 
@@ -1317,66 +1395,14 @@ static void advertising_start(void)
     APP_ERROR_CHECK(err_code);
 }
 
-
-
-
-/**@brief Application main function.
- */
-int main(void)
-{
+static void senddata(){
 	
-    bool erase_bonds;
-    // Initialize.
-		nrf_drv_clock_init();
-    log_init();
-    timers_init();
-    buttons_leds_init(&erase_bonds);
-    power_management_init();
-    ble_stack_init();
-    gap_params_init();
-    gatt_init();
-    services_init();
-    advertising_init();
-    conn_params_init();
-		sd_power_dcdc_mode_set(NRF_POWER_DCDC_ENABLE);
-    // Start execution.
-    advertising_start();
-		
-#ifdef 	USE_TF
-
-		tf_disk_init();
-		
-		tf_write_string(TEST_STRING,sizeof(TEST_STRING));
-		
-		FRESULT ff_result;
-		ff_result = f_open(&file, FILE_NAME, FA_READ | FA_WRITE | FA_OPEN_APPEND);
-		if (ff_result != FR_OK)
-		{
-				NRF_LOG_INFO("Unable to open or create file: " FILE_NAME ".");
-				
-		}
-		
-#endif		
-		
-		//nrf_gpio_pin_set(ECG_CS_PIN);
-#ifdef USE_MPU
-		mpu_init();
-#endif
-		saadc_init();
-		application_timers_start();
-		//nrf_pwr_mgmt_shutdown(NRF_PWR_MGMT_SHUTDOWN_GOTO_SYSOFF);
-		//uart_init();
-		
 		static int offset = 0;
 		static int16_t heheh[121];
 		static char tf_str[50];
 		static char write_str[1500];
 		memset(write_str,0,1500);
-		
-    // Enter main loop.
-		
-    for (;;)
-    {
+
 #define USE_MPU_S			
 			
 			if(is_connected){
@@ -1441,6 +1467,64 @@ int main(void)
 				
 			
 			
+
+
+}
+
+
+/**@brief Application main function.
+ */
+int main(void)
+{
+	
+    bool erase_bonds;
+    // Initialize.
+		nrf_drv_clock_init();
+    log_init();
+    timers_init();
+    buttons_leds_init(&erase_bonds);
+    power_management_init();
+    ble_stack_init();
+    gap_params_init();
+    gatt_init();
+    services_init();
+    advertising_init();
+    conn_params_init();
+		sd_power_dcdc_mode_set(NRF_POWER_DCDC_ENABLE);
+    // Start execution.
+    advertising_start();
+		
+#ifdef 	USE_TF
+
+		tf_disk_init();
+		
+		tf_write_string(TEST_STRING,sizeof(TEST_STRING));
+		
+		FRESULT ff_result;
+		ff_result = f_open(&file, FILE_NAME, FA_READ | FA_WRITE | FA_OPEN_APPEND);
+		if (ff_result != FR_OK)
+		{
+				NRF_LOG_INFO("Unable to open or create file: " FILE_NAME ".");
+				
+		}
+		
+#endif		
+		
+		//nrf_gpio_pin_set(ECG_CS_PIN);
+#ifdef USE_MPU
+		mpu_init();
+#endif
+		saadc_init();
+		application_timers_start();
+		//nrf_pwr_mgmt_shutdown(NRF_PWR_MGMT_SHUTDOWN_GOTO_SYSOFF);
+		//uart_init();
+		
+		
+		
+    // Enter main loop.
+		
+    for (;;)
+    {
       idle_state_handle();
 
     }
