@@ -161,7 +161,7 @@ APP_TIMER_DEF(batt_timer);
 
 //static nrf_ppi_channel_t     m_ppi_channel;
 
-#define QUEUE_SIZE 1200
+#define QUEUE_SIZE 120
 
 NRF_QUEUE_DEF(int16_t, m_ecg_queue, QUEUE_SIZE, NRF_QUEUE_MODE_OVERFLOW);
 NRF_QUEUE_DEF(int16_t, m_accx_queue, QUEUE_SIZE, NRF_QUEUE_MODE_OVERFLOW);
@@ -321,7 +321,7 @@ static void saadc_init(void)
     ret_code_t err_code;
 	
     //nrf_saadc_channel_config_t channel_0_config = NRF_DRV_SAADC_DEFAULT_CHANNEL_CONFIG_SE(NRF_SAADC_INPUT_AIN5);
-		
+	/*	
 	nrf_saadc_channel_config_t channel_0_config =
 	{                                                                    \
     .resistor_p = NRF_SAADC_RESISTOR_DISABLED,                       \
@@ -329,11 +329,11 @@ static void saadc_init(void)
     .gain       = NRF_SAADC_GAIN1_6,                                 \
     .reference  = NRF_SAADC_REFERENCE_INTERNAL,                      \
     .acq_time   = NRF_SAADC_ACQTIME_10US,                            \
-    .mode       = NRF_SAADC_MODE_SINGLE_ENDED,                       \
+    .mode       = NRF_SAADC_MODE_DIFFERENTIAL,                       \
     .pin_p      = (nrf_saadc_input_t)(NRF_SAADC_INPUT_AIN5),                        \
     .pin_n      = (nrf_saadc_input_t)(NRF_SAADC_INPUT_AIN4)                        \
-};
-	
+};*/
+	nrf_saadc_channel_config_t channel_0_config = NRF_DRV_SAADC_DEFAULT_CHANNEL_CONFIG_SE(NRF_SAADC_INPUT_AIN5);
 		nrf_saadc_channel_config_t channel_1_config = NRF_DRV_SAADC_DEFAULT_CHANNEL_CONFIG_SE(NRF_SAADC_INPUT_AIN6);
 	
     err_code = nrf_drv_saadc_init(NULL, saadc_callback);
@@ -1377,10 +1377,10 @@ int main(void)
 		
     for (;;)
     {
-			
+#define USE_MPU_S			
 			
 			if(is_connected){
-#ifdef USE_MPU			
+#ifdef USE_MPU_S			
 				ret_code_t ret = nrf_queue_pop(&m_ecg_queue,&heheh[offset*4]);
 #else
 				ret_code_t ret = nrf_queue_pop(&m_ecg_queue,&heheh[offset]);
@@ -1407,13 +1407,13 @@ int main(void)
 						
 						offset++;
 					}
-#ifdef USE_MPU					
+#ifdef USE_MPU_S					
 					if(offset == 30){
 #else
 					if(offset == 120){
 #endif						
 						if(is_connected){			
-#ifdef USE_MPU
+#ifdef USE_MPU_S
 						uint16_t llength = 240;
 #else 
 							uint16_t llength = 242;
