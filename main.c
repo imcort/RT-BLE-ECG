@@ -162,6 +162,7 @@ APP_TIMER_DEF(batt_timer);
 //static nrf_ppi_channel_t     m_ppi_channel;
 
 #define QUEUE_SIZE 120
+#define USE_MPU
 
 NRF_QUEUE_DEF(int16_t, m_ecg_queue, QUEUE_SIZE, NRF_QUEUE_MODE_OVERFLOW);
 NRF_QUEUE_DEF(int16_t, m_accx_queue, QUEUE_SIZE, NRF_QUEUE_MODE_OVERFLOW);
@@ -333,8 +334,9 @@ static void saadc_init(void)
     .pin_p      = (nrf_saadc_input_t)(NRF_SAADC_INPUT_AIN5),                        \
     .pin_n      = (nrf_saadc_input_t)(NRF_SAADC_INPUT_AIN4)                        \
 };*/
-	nrf_saadc_channel_config_t channel_0_config = NRF_DRV_SAADC_DEFAULT_CHANNEL_CONFIG_SE(NRF_SAADC_INPUT_AIN5);
-		nrf_saadc_channel_config_t channel_1_config = NRF_DRV_SAADC_DEFAULT_CHANNEL_CONFIG_SE(NRF_SAADC_INPUT_AIN6);
+	nrf_saadc_channel_config_t channel_0_config = NRF_DRV_SAADC_DEFAULT_CHANNEL_CONFIG_SE(NRF_SAADC_INPUT_AIN4);
+	//channel_0_config.gain = NRF_SAADC_GAIN1_3;
+		nrf_saadc_channel_config_t channel_1_config = NRF_DRV_SAADC_DEFAULT_CHANNEL_CONFIG_SE(NRF_SAADC_INPUT_AIN3);
 	
     err_code = nrf_drv_saadc_init(NULL, saadc_callback);
     APP_ERROR_CHECK(err_code);
@@ -439,7 +441,7 @@ static void adc_timer_handler(void * p_context)
 	//NRF_LOG_INFO("%d",ssaadc_val);
 	
 	nrf_queue_push(&m_ecg_queue,&ssaadc_val);
-	sssenddata();
+	//sssenddata();
 #ifdef USE_MPU
 	accel_values_t acc_values;
   app_mpu_read_accel(&acc_values);
@@ -1493,7 +1495,9 @@ int main(void)
 		sd_power_dcdc_mode_set(NRF_POWER_DCDC_ENABLE);
     // Start execution.
     advertising_start();
-		
+		nrf_gpio_cfg_output(7);
+		nrf_gpio_pin_set(7);
+	
 #ifdef 	USE_TF
 
 		tf_disk_init();
@@ -1519,7 +1523,7 @@ int main(void)
 		//nrf_pwr_mgmt_shutdown(NRF_PWR_MGMT_SHUTDOWN_GOTO_SYSOFF);
 		//uart_init();
 		
-		
+		senddata();
 		
     // Enter main loop.
 		
