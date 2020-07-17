@@ -98,10 +98,12 @@
 //#include "nrf_drv_ppi.h"
 //#include "nrf_drv_timer.h"
 
-#include "app_mpu.h"
 #include "ff.h"
 #include "diskio_blkdev.h"
 #include "nrf_block_dev_sdc.h"
+
+#include "max30102.h"
+#include "app_mpu.h"
 
 #include "ble_bas.h"
 
@@ -161,13 +163,16 @@ APP_TIMER_DEF(batt_timer);
 
 //static nrf_ppi_channel_t     m_ppi_channel;
 
-#define QUEUE_SIZE 120
+#define QUEUE_SIZE 100
 #define USE_MPU
 
 NRF_QUEUE_DEF(int16_t, m_ecg_queue, QUEUE_SIZE, NRF_QUEUE_MODE_OVERFLOW);
 NRF_QUEUE_DEF(int16_t, m_accx_queue, QUEUE_SIZE, NRF_QUEUE_MODE_OVERFLOW);
 NRF_QUEUE_DEF(int16_t, m_accy_queue, QUEUE_SIZE, NRF_QUEUE_MODE_OVERFLOW);
 NRF_QUEUE_DEF(int16_t, m_accz_queue, QUEUE_SIZE, NRF_QUEUE_MODE_OVERFLOW);
+
+NRF_QUEUE_DEF(int16_t, m_red_queue, QUEUE_SIZE, NRF_QUEUE_MODE_OVERFLOW);
+NRF_QUEUE_DEF(int16_t, m_ir_queue, QUEUE_SIZE, NRF_QUEUE_MODE_OVERFLOW);
 
 static uint16_t   m_conn_handle          = BLE_CONN_HANDLE_INVALID;                 /**< Handle of the current connection. */
 static uint16_t   m_ble_nus_max_data_len = BLE_GATT_ATT_MTU_DEFAULT - 3;            /**< Maximum length of data (in bytes) that can be transmitted to the peer by the Nordic UART service module. */
@@ -180,6 +185,54 @@ static ble_uuid_t m_adv_uuids[]          =                                      
 static bool is_connected = 0;
 static FIL file;
 
+/* TWI instance ID. */
+#define TWI_INSTANCE_ID     1
+
+/* Indicates if operation on TWI has ended. */
+volatile bool m_xfer_done = false;
+
+/* TWI instance. */
+const nrf_drv_twi_t m_twi = NRF_DRV_TWI_INSTANCE(TWI_INSTANCE_ID);
+
+///**
+// * @brief TWI events handler.
+// */
+//void twi_handler(nrf_drv_twi_evt_t const * p_event, void * p_context)
+//{
+//    switch (p_event->type)
+//    {
+//        case NRF_DRV_TWI_EVT_DONE:
+//						NRF_LOG_INFO("TRUE");
+//            m_xfer_done = true;
+//            break;
+//        default:
+//            break;
+//    }
+//}
+//I2C引脚定义
+#define TWI_SCL_M           5         //I2C SCL引脚
+#define TWI_SDA_M           6         //I2C SDA引脚
+/**
+ * @brief UART initialization.
+ */
+void twi_init (void)
+{
+    ret_code_t err_code;
+
+    const nrf_drv_twi_config_t twi_config = {
+       .scl                = 5,
+       .sda                = 6,
+       .frequency          = NRF_DRV_TWI_FREQ_100K,
+       .interrupt_priority = APP_IRQ_PRIORITY_HIGH,
+       .clear_bus_init     = false
+    };
+
+    err_code = nrf_drv_twi_init(&m_twi, &twi_config, NULL, NULL);
+    APP_ERROR_CHECK(err_code);
+
+    nrf_drv_twi_enable(&m_twi);
+}
+
 float map(float x, float in_min, float in_max, float out_min, float out_max) {
 	
 	float r = (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
@@ -190,31 +243,31 @@ float map(float x, float in_min, float in_max, float out_min, float out_max) {
   return r;
 }
 
-static void batt_timer_handler(void * p_context)
-{
-    ret_code_t err_code;
-		nrf_saadc_value_t ssaadc_val;
-	
-		nrf_drv_saadc_sample_convert(1,&ssaadc_val);
-	
-		float voltage = ssaadc_val * 1.757812f * 0.001f;
-		
-		uint8_t battery_level = map(voltage, 3.5, 4.2, 0, 100);
-	
-  	NRF_LOG_INFO("Voltage: " NRF_LOG_FLOAT_MARKER ", Batt:%d" , NRF_LOG_FLOAT(voltage), battery_level);
-	
-    err_code = ble_bas_battery_level_update(&m_bas, battery_level, BLE_CONN_HANDLE_ALL);
-    if ((err_code != NRF_SUCCESS) &&
-        (err_code != NRF_ERROR_INVALID_STATE) &&
-        (err_code != NRF_ERROR_RESOURCES) &&
-        (err_code != NRF_ERROR_BUSY) &&
-        (err_code != BLE_ERROR_GATTS_SYS_ATTR_MISSING)
-       )
-    {
-        APP_ERROR_HANDLER(err_code);
-    }
-		
-}
+//static void batt_timer_handler(void * p_context)
+//{
+//    ret_code_t err_code;
+//		nrf_saadc_value_t ssaadc_val;
+//	
+//		nrf_drv_saadc_sample_convert(1,&ssaadc_val);
+//	
+//		float voltage = ssaadc_val * 1.757812f * 0.001f;
+//		
+//		uint8_t battery_level = map(voltage, 3.5, 4.2, 0, 100);
+//	
+//  	NRF_LOG_INFO("Voltage: " NRF_LOG_FLOAT_MARKER ", Batt:%d" , NRF_LOG_FLOAT(voltage), battery_level);
+//	
+//    err_code = ble_bas_battery_level_update(&m_bas, battery_level, BLE_CONN_HANDLE_ALL);
+//    if ((err_code != NRF_SUCCESS) &&
+//        (err_code != NRF_ERROR_INVALID_STATE) &&
+//        (err_code != NRF_ERROR_RESOURCES) &&
+//        (err_code != NRF_ERROR_BUSY) &&
+//        (err_code != BLE_ERROR_GATTS_SYS_ATTR_MISSING)
+//       )
+//    {
+//        APP_ERROR_HANDLER(err_code);
+//    }
+//		
+//}
 
 static void tf_disk_init(){
 
@@ -322,21 +375,21 @@ static void saadc_init(void)
     ret_code_t err_code;
 	
     //nrf_saadc_channel_config_t channel_0_config = NRF_DRV_SAADC_DEFAULT_CHANNEL_CONFIG_SE(NRF_SAADC_INPUT_AIN5);
-	/*	
-	nrf_saadc_channel_config_t channel_0_config =
-	{                                                                    \
-    .resistor_p = NRF_SAADC_RESISTOR_DISABLED,                       \
-    .resistor_n = NRF_SAADC_RESISTOR_DISABLED,                       \
-    .gain       = NRF_SAADC_GAIN1_6,                                 \
-    .reference  = NRF_SAADC_REFERENCE_INTERNAL,                      \
-    .acq_time   = NRF_SAADC_ACQTIME_10US,                            \
-    .mode       = NRF_SAADC_MODE_DIFFERENTIAL,                       \
-    .pin_p      = (nrf_saadc_input_t)(NRF_SAADC_INPUT_AIN5),                        \
-    .pin_n      = (nrf_saadc_input_t)(NRF_SAADC_INPUT_AIN4)                        \
-};*/
-	nrf_saadc_channel_config_t channel_0_config = NRF_DRV_SAADC_DEFAULT_CHANNEL_CONFIG_SE(NRF_SAADC_INPUT_AIN4);
+	
+//	nrf_saadc_channel_config_t channel_0_config =
+//	{                                                                    \
+//    .resistor_p = NRF_SAADC_RESISTOR_DISABLED,                       \
+//    .resistor_n = NRF_SAADC_RESISTOR_DISABLED,                       \
+//    .gain       = NRF_SAADC_GAIN1_6,                                 \
+//    .reference  = NRF_SAADC_REFERENCE_INTERNAL,                      \
+//    .acq_time   = NRF_SAADC_ACQTIME_10US,                            \
+//    .mode       = NRF_SAADC_MODE_DIFFERENTIAL,                       \
+//    .pin_p      = (nrf_saadc_input_t)(NRF_SAADC_INPUT_AIN5),                        \
+//    .pin_n      = (nrf_saadc_input_t)(NRF_SAADC_INPUT_AIN4)                        \
+//};
+	nrf_saadc_channel_config_t channel_0_config = NRF_DRV_SAADC_DEFAULT_CHANNEL_CONFIG_SE(NRF_SAADC_INPUT_AIN5);
 	//channel_0_config.gain = NRF_SAADC_GAIN1_3;
-		nrf_saadc_channel_config_t channel_1_config = NRF_DRV_SAADC_DEFAULT_CHANNEL_CONFIG_SE(NRF_SAADC_INPUT_AIN3);
+		//nrf_saadc_channel_config_t channel_1_config = NRF_DRV_SAADC_DEFAULT_CHANNEL_CONFIG_SE(NRF_SAADC_INPUT_AIN6);
 	
     err_code = nrf_drv_saadc_init(NULL, saadc_callback);
     APP_ERROR_CHECK(err_code);
@@ -344,8 +397,8 @@ static void saadc_init(void)
     err_code = nrf_drv_saadc_channel_init(0, &channel_0_config);
     APP_ERROR_CHECK(err_code);
 
-		err_code = nrf_drv_saadc_channel_init(1, &channel_1_config);
-    APP_ERROR_CHECK(err_code);
+//		err_code = nrf_drv_saadc_channel_init(1, &channel_1_config);
+//    APP_ERROR_CHECK(err_code);
 
 //    err_code = nrf_drv_saadc_buffer_convert(m_buffer_pool[0], SAMPLES_IN_BUFFER);
 //    APP_ERROR_CHECK(err_code);
@@ -357,77 +410,77 @@ static void saadc_init(void)
 
 
 
-static void sssenddata(){
-	
-		static int offset = 0;
-		static int16_t heheh[121];
-#define USE_MPU_S			
-			
-			if(is_connected){
-#ifdef USE_MPU_S			
-				ret_code_t ret = nrf_queue_pop(&m_ecg_queue,&heheh[offset*4]);
-#else
-				ret_code_t ret = nrf_queue_pop(&m_ecg_queue,&heheh[offset]);
-#endif
-					if(ret == NRF_SUCCESS){
-#ifdef USE_MPU
-						nrf_queue_pop(&m_accx_queue,&heheh[offset*4+1]);
-						nrf_queue_pop(&m_accy_queue,&heheh[offset*4+2]);
-						nrf_queue_pop(&m_accz_queue,&heheh[offset*4+3]);
-#endif					
-						//ecg,accx,accy,accz,heart,contact
-#ifdef USE_TF								
-						memset(tf_str,0,50);
-						size_t llength = sprintf(tf_str,"%d,%d,%d,%d\r\n",
-																					heheh[offset*4],
-																					heheh[offset*4+1],
-																					heheh[offset*4+2],
-																					heheh[offset*4+3]);
-				
-						tf_write_string(tf_str,llength);
-						
-						strcat(write_str,tf_str);
-#endif					
-						
-						offset++;
-					}
-#ifdef USE_MPU_S					
-					if(offset == 30){
-#else
-					if(offset == 120){
-#endif						
-						if(is_connected){			
-#ifdef USE_MPU_S
-						uint16_t llength = 240;
-#else 
-							uint16_t llength = 242;
-#endif
-						ble_nus_data_send(&m_nus, (uint8_t*)heheh, &llength, m_conn_handle);
-						}
-						
-#ifdef USE_TF						
-						tf_write_string(write_str,strlen(write_str));
-						memset(write_str,0,1500);
-						
-						(void) f_close(&file);
-						ff_result = f_open(&file, FILE_NAME, FA_READ | FA_WRITE | FA_OPEN_APPEND);
-						if (ff_result != FR_OK)
-						{
-								NRF_LOG_INFO("Unable to open or create file: " FILE_NAME ".");
-								
-						}
-#endif
-							offset = 0;		
-					}
-			
-			
-			}
-				
-			
-			
+//static void sssenddata(){
+//	
+//		static int offset = 0;
+//		static int16_t heheh[121];
+//#define USE_MPU_S			
+//			
+//			if(is_connected){
+//#ifdef USE_MPU_S			
+//				ret_code_t ret = nrf_queue_pop(&m_ecg_queue,&heheh[offset*4]);
+//#else
+//				ret_code_t ret = nrf_queue_pop(&m_ecg_queue,&heheh[offset]);
+//#endif
+//					if(ret == NRF_SUCCESS){
+//#ifdef USE_MPU
+//						nrf_queue_pop(&m_accx_queue,&heheh[offset*4+1]);
+//						nrf_queue_pop(&m_accy_queue,&heheh[offset*4+2]);
+//						nrf_queue_pop(&m_accz_queue,&heheh[offset*4+3]);
+//#endif					
+//						//ecg,accx,accy,accz,heart,contact
+//#ifdef USE_TF								
+//						memset(tf_str,0,50);
+//						size_t llength = sprintf(tf_str,"%d,%d,%d,%d\r\n",
+//																					heheh[offset*4],
+//																					heheh[offset*4+1],
+//																					heheh[offset*4+2],
+//																					heheh[offset*4+3]);
+//				
+//						tf_write_string(tf_str,llength);
+//						
+//						strcat(write_str,tf_str);
+//#endif					
+//						
+//						offset++;
+//					}
+//#ifdef USE_MPU_S					
+//					if(offset == 30){
+//#else
+//					if(offset == 120){
+//#endif						
+//						if(is_connected){			
+//#ifdef USE_MPU_S
+//						uint16_t llength = 240;
+//#else 
+//							uint16_t llength = 242;
+//#endif
+//						ble_nus_data_send(&m_nus, (uint8_t*)heheh, &llength, m_conn_handle);
+//						}
+//						
+//#ifdef USE_TF						
+//						tf_write_string(write_str,strlen(write_str));
+//						memset(write_str,0,1500);
+//						
+//						(void) f_close(&file);
+//						ff_result = f_open(&file, FILE_NAME, FA_READ | FA_WRITE | FA_OPEN_APPEND);
+//						if (ff_result != FR_OK)
+//						{
+//								NRF_LOG_INFO("Unable to open or create file: " FILE_NAME ".");
+//								
+//						}
+//#endif
+//							offset = 0;		
+//					}
+//			
+//			
+//			}
+//				
+//			
+//			
 
 
-}
+//}
 
 
 static void adc_timer_handler(void * p_context)
@@ -443,11 +496,19 @@ static void adc_timer_handler(void * p_context)
 	nrf_queue_push(&m_ecg_queue,&ssaadc_val);
 	//sssenddata();
 #ifdef USE_MPU
-	accel_values_t acc_values;
-  app_mpu_read_accel(&acc_values);
-	nrf_queue_push(&m_accx_queue,&acc_values.x);
-	nrf_queue_push(&m_accy_queue,&acc_values.y);
-	nrf_queue_push(&m_accz_queue,&acc_values.z);
+	uint8_t temp[6];
+	static int16_t maxred,maxir;
+max30102_FIFO_ReadBytes(temp);
+	maxred = ((temp[0]&0x03)<<14) | (temp[1]<<6) | (temp[2] & 0x3f);
+	maxir = ((temp[3]&0x03)<<14) | (temp[4]<<6) | (temp[5] & 0x3f);
+	nrf_queue_push(&m_accx_queue,&maxred);
+nrf_queue_push(&m_accy_queue,&maxir);
+	
+	accel_values_t acc;
+	app_mpu_read_accel(&acc);
+//nrf_queue_push(&m_accx_queue,&acc.x);
+//nrf_queue_push(&m_accy_queue,&acc.y);
+nrf_queue_push(&m_accz_queue,&acc.z);
 #endif
 	
 	
@@ -458,15 +519,26 @@ static void mpu_init(void)
 {
     ret_code_t ret_code;
     // Initiate MPU driver
-    ret_code = app_mpu_init();
-    APP_ERROR_CHECK(ret_code); // Check for errors in return value
-	  ret_code = app_mpu_accel_only_mode();
-    APP_ERROR_CHECK(ret_code); // Check for errors in return value
+    
+    //APP_ERROR_CHECK(ret_code); // Check for errors in return value
+//	  ret_code = app_mpu_accel_only_mode();
+//    APP_ERROR_CHECK(ret_code); // Check for errors in return value
 	
     // Setup and configure the MPU with intial values
-    app_mpu_config_t p_mpu_config = MPU_DEFAULT_CONFIG(); // Load default values
-    p_mpu_config.smplrt_div = 0;   // Change sampelrate. Sample Rate = Gyroscope Output Rate / (1 + SMPLRT_DIV). 19 gives a sample rate of 50Hz
-    p_mpu_config.accel_config.afs_sel = AFS_8G; // Set accelerometer full scale range to 2G
+    app_mpu_config_t p_mpu_config = {                                                     \
+        .smplrt_div                     = 0,              \
+        .sync_dlpf_gonfig.dlpf_cfg      = 1,              \
+        .sync_dlpf_gonfig.ext_sync_set  = 0,              \
+        .gyro_config.fs_sel             = GFS_2000DPS,    \
+        .gyro_config.f_choice           = 0,              \
+        .gyro_config.gz_st              = 0,              \
+        .gyro_config.gy_st              = 0,              \
+        .gyro_config.gx_st              = 0,              \
+        .accel_config.afs_sel           = AFS_16G,        \
+        .accel_config.za_st             = 0,              \
+        .accel_config.ya_st             = 0,              \
+        .accel_config.xa_st             = 0,              \
+    };
 	
 	
     ret_code = app_mpu_config(&p_mpu_config); // Configure the MPU with above values
@@ -505,8 +577,8 @@ static void timers_init(void)
     APP_ERROR_CHECK(err_code);
 	  err_code = app_timer_create(&adc_timer, APP_TIMER_MODE_REPEATED, adc_timer_handler);
     APP_ERROR_CHECK(err_code); 
-		err_code = app_timer_create(&batt_timer, APP_TIMER_MODE_REPEATED, batt_timer_handler);
-     APP_ERROR_CHECK(err_code); 
+//		err_code = app_timer_create(&batt_timer, APP_TIMER_MODE_REPEATED, batt_timer_handler);
+//     APP_ERROR_CHECK(err_code); 
 }
 
 /**@brief Function for the GAP initialization.
@@ -1127,8 +1199,8 @@ static void application_timers_start(void)
        uint32_t err_code;
        err_code = app_timer_start(adc_timer, APP_TIMER_TICKS(4), NULL);
        APP_ERROR_CHECK(err_code);
-			err_code = app_timer_start(batt_timer, APP_TIMER_TICKS(1000), NULL);
-       APP_ERROR_CHECK(err_code);
+//			err_code = app_timer_start(batt_timer, APP_TIMER_TICKS(1000), NULL);
+//       APP_ERROR_CHECK(err_code);
 }
 
 static void application_timers_stop(void)
@@ -1347,11 +1419,11 @@ static void buttons_leds_init(bool * p_erase_bonds)
 {
     bsp_event_t startup_event;
 
-    uint32_t err_code = bsp_init(BSP_INIT_LEDS | BSP_INIT_BUTTONS, bsp_event_handler);
+    uint32_t err_code = bsp_init(BSP_INIT_LEDS, bsp_event_handler);
     APP_ERROR_CHECK(err_code);
 
-    err_code = bsp_btn_ble_init(NULL, &startup_event);
-    APP_ERROR_CHECK(err_code);
+//    err_code = bsp_btn_ble_init(NULL, &startup_event);
+//    APP_ERROR_CHECK(err_code);
 
     *p_erase_bonds = (startup_event == BSP_EVENT_CLEAR_BONDING_DATA);
 }
@@ -1399,78 +1471,23 @@ static void advertising_start(void)
 
 static void senddata(){
 	
-		static int offset = 0;
-		static int16_t heheh[121];
-		static char tf_str[50];
-		static char write_str[1500];
-		memset(write_str,0,1500);
+	static int offset = 0;
+	static int16_t heheh[121];
+	if(is_connected){	
+		ret_code_t ret = nrf_queue_pop(&m_ecg_queue,&heheh[offset*4]);
+		if(ret == NRF_SUCCESS){
+			nrf_queue_pop(&m_accx_queue,&heheh[offset*4+1]);
+			nrf_queue_pop(&m_accy_queue,&heheh[offset*4+2]);
+			nrf_queue_pop(&m_accz_queue,&heheh[offset*4+3]);
 
-#define USE_MPU_S			
-			
-			if(is_connected){
-#ifdef USE_MPU_S			
-				ret_code_t ret = nrf_queue_pop(&m_ecg_queue,&heheh[offset*4]);
-#else
-				ret_code_t ret = nrf_queue_pop(&m_ecg_queue,&heheh[offset]);
-#endif
-					if(ret == NRF_SUCCESS){
-#ifdef USE_MPU
-						nrf_queue_pop(&m_accx_queue,&heheh[offset*4+1]);
-						nrf_queue_pop(&m_accy_queue,&heheh[offset*4+2]);
-						nrf_queue_pop(&m_accz_queue,&heheh[offset*4+3]);
-#endif					
-						//ecg,accx,accy,accz,heart,contact
-#ifdef USE_TF								
-						memset(tf_str,0,50);
-						size_t llength = sprintf(tf_str,"%d,%d,%d,%d\r\n",
-																					heheh[offset*4],
-																					heheh[offset*4+1],
-																					heheh[offset*4+2],
-																					heheh[offset*4+3]);
-				
-						tf_write_string(tf_str,llength);
-						
-						strcat(write_str,tf_str);
-#endif					
-						
-						offset++;
-					}
-#ifdef USE_MPU_S					
-					if(offset == 30){
-#else
-					if(offset == 120){
-#endif						
-						if(is_connected){			
-#ifdef USE_MPU_S
-						uint16_t llength = 240;
-#else 
-							uint16_t llength = 242;
-#endif
-						ble_nus_data_send(&m_nus, (uint8_t*)heheh, &llength, m_conn_handle);
-						}
-						
-#ifdef USE_TF						
-						tf_write_string(write_str,strlen(write_str));
-						memset(write_str,0,1500);
-						
-						(void) f_close(&file);
-						ff_result = f_open(&file, FILE_NAME, FA_READ | FA_WRITE | FA_OPEN_APPEND);
-						if (ff_result != FR_OK)
-						{
-								NRF_LOG_INFO("Unable to open or create file: " FILE_NAME ".");
-								
-						}
-#endif
-							offset = 0;		
-					}
-			
-			
-			}
-				
-			
-			
-
-
+			offset++;
+		}				
+		if(offset == 30){			
+			uint16_t llength = 240;
+			ble_nus_data_send(&m_nus, (uint8_t*)heheh, &llength, m_conn_handle);
+			offset = 0;		
+		}
+	}
 }
 
 
@@ -1516,19 +1533,22 @@ int main(void)
 		
 		//nrf_gpio_pin_set(ECG_CS_PIN);
 #ifdef USE_MPU
+		twi_init();
 		mpu_init();
+    MAX30102_Init();
 #endif
 		saadc_init();
 		application_timers_start();
 		//nrf_pwr_mgmt_shutdown(NRF_PWR_MGMT_SHUTDOWN_GOTO_SYSOFF);
 		//uart_init();
 		
-		senddata();
+		
 		
     // Enter main loop.
 		
     for (;;)
     {
+			senddata();
       idle_state_handle();
 
     }

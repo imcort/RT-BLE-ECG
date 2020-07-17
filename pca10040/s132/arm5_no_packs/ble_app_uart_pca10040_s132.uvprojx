@@ -393,16 +393,6 @@
               <FilePath>..\config\sdk_config.h</FilePath>
             </File>
             <File>
-              <FileName>app_mpu.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\..\..\app_mpu.c</FilePath>
-            </File>
-            <File>
-              <FileName>nrf_drv_mpu_twi.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\..\..\nrf_drv_mpu_twi.c</FilePath>
-            </File>
-            <File>
               <FileName>ff.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\..\..\..\..\external\fatfs\src\ff.c</FilePath>
@@ -411,6 +401,21 @@
               <FileName>diskio_blkdev.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\..\..\..\..\external\fatfs\port\diskio_blkdev.c</FilePath>
+            </File>
+            <File>
+              <FileName>max30102.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\..\max30102.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_mpu.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\..\app_mpu.c</FilePath>
+            </File>
+            <File>
+              <FileName>nrf_drv_mpu_twi.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\..\nrf_drv_mpu_twi.c</FilePath>
             </File>
           </Files>
         </Group>
@@ -3756,16 +3761,6 @@
               <FilePath>..\config\sdk_config.h</FilePath>
             </File>
             <File>
-              <FileName>app_mpu.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\..\..\app_mpu.c</FilePath>
-            </File>
-            <File>
-              <FileName>nrf_drv_mpu_twi.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\..\..\nrf_drv_mpu_twi.c</FilePath>
-            </File>
-            <File>
               <FileName>ff.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\..\..\..\..\external\fatfs\src\ff.c</FilePath>
@@ -3774,6 +3769,21 @@
               <FileName>diskio_blkdev.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\..\..\..\..\external\fatfs\port\diskio_blkdev.c</FilePath>
+            </File>
+            <File>
+              <FileName>max30102.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\..\max30102.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_mpu.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\..\app_mpu.c</FilePath>
+            </File>
+            <File>
+              <FileName>nrf_drv_mpu_twi.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\..\nrf_drv_mpu_twi.c</FilePath>
             </File>
           </Files>
         </Group>

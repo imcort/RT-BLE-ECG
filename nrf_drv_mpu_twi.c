@@ -20,8 +20,8 @@
  * and therefore I have added a conditional statement defining different pins
  * for each board. This is only for my own convenience. 
  */
-#define MPU_TWI_SCL_PIN 5
-#define MPU_TWI_SDA_PIN 6
+//#define MPU_TWI_SCL_PIN 5
+//#define MPU_TWI_SDA_PIN 6
 
 
 #define MPU_TWI_BUFFER_SIZE     	14 // 14 byte buffers will suffice to read acceleromter, gyroscope and temperature data in one transmission.
@@ -30,43 +30,47 @@
 #define MPU_AK89XX_MAGN_ADDRESS   0x0C
 
 
-static const nrf_drv_twi_t m_twi_instance = NRF_DRV_TWI_INSTANCE(1);
-volatile static bool twi_tx_done = false;
-volatile static bool twi_rx_done = false;
+//static const nrf_drv_twi_t m_twi_instance = NRF_DRV_TWI_INSTANCE(1);
+//volatile static bool twi_tx_done = false;
+//volatile static bool twi_rx_done = false;
+extern bool m_xfer_done;
+//定义TWI驱动程序实例，名称为m_twi
+extern nrf_drv_twi_t m_twi;
+
 
 uint8_t twi_tx_buffer[MPU_TWI_BUFFER_SIZE];
 
-static void nrf_drv_mpu_twi_event_handler(nrf_drv_twi_evt_t const * p_event, void * p_context)
-{
-    switch(p_event->type)
-    {
-        case NRF_DRV_TWI_EVT_DONE:
-            switch(p_event->xfer_desc.type)
-            {
-                case NRF_DRV_TWI_XFER_TX:
-                    twi_tx_done = true;
-                    break;
-                case NRF_DRV_TWI_XFER_TXTX:
-                    twi_tx_done = true;
-                    break;
-                case NRF_DRV_TWI_XFER_RX:
-                    twi_rx_done = true;
-                    break;
-                case NRF_DRV_TWI_XFER_TXRX:
-                    twi_rx_done = true;
-                    break;
-                default:
-                    break;
-            }
-            break;
-        case NRF_DRV_TWI_EVT_ADDRESS_NACK:
-            break;
-        case NRF_DRV_TWI_EVT_DATA_NACK:
-            break;
-        default:
-            break;
-    }
-}
+//static void nrf_drv_mpu_twi_event_handler(nrf_drv_twi_evt_t const * p_event, void * p_context)
+//{
+//    switch(p_event->type)
+//    {
+//        case NRF_DRV_TWI_EVT_DONE:
+//            switch(p_event->xfer_desc.type)
+//            {
+//                case NRF_DRV_TWI_XFER_TX:
+//                    twi_tx_done = true;
+//                    break;
+//                case NRF_DRV_TWI_XFER_TXTX:
+//                    twi_tx_done = true;
+//                    break;
+//                case NRF_DRV_TWI_XFER_RX:
+//                    twi_rx_done = true;
+//                    break;
+//                case NRF_DRV_TWI_XFER_TXRX:
+//                    twi_rx_done = true;
+//                    break;
+//                default:
+//                    break;
+//            }
+//            break;
+//        case NRF_DRV_TWI_EVT_ADDRESS_NACK:
+//            break;
+//        case NRF_DRV_TWI_EVT_DATA_NACK:
+//            break;
+//        default:
+//            break;
+//    }
+//}
 
 
 
@@ -74,28 +78,28 @@ static void nrf_drv_mpu_twi_event_handler(nrf_drv_twi_evt_t const * p_event, voi
  * @brief TWI initialization.
  * Just the usual way. Nothing special here
  */
-uint32_t nrf_drv_mpu_init(void)
-{
-    uint32_t err_code;
-    
-    const nrf_drv_twi_config_t twi_mpu_config = {
-       .scl                = MPU_TWI_SCL_PIN,
-       .sda                = MPU_TWI_SDA_PIN,
-       .frequency          = NRF_DRV_TWI_FREQ_100K,
-       .interrupt_priority = APP_IRQ_PRIORITY_HIGHEST,
-       .clear_bus_init     = false
-    };
-    
-    err_code = nrf_drv_twi_init(&m_twi_instance, &twi_mpu_config, nrf_drv_mpu_twi_event_handler, NULL);
-    if(err_code != NRF_SUCCESS)
-	{
-		return err_code;
-	}
-    
-    nrf_drv_twi_enable(&m_twi_instance);
-	
-	return NRF_SUCCESS;
-}
+//uint32_t nrf_drv_mpu_init(void)
+//{
+//    uint32_t err_code;
+//    
+//    const nrf_drv_twi_config_t twi_mpu_config = {
+//       .scl                = MPU_TWI_SCL_PIN,
+//       .sda                = MPU_TWI_SDA_PIN,
+//       .frequency          = NRF_DRV_TWI_FREQ_400K,
+//       .interrupt_priority = APP_IRQ_PRIORITY_HIGHEST,
+//       .clear_bus_init     = false
+//    };
+//    
+//    err_code = nrf_drv_twi_init(&m_twi_instance, &twi_mpu_config, nrf_drv_mpu_twi_event_handler, NULL);
+//    if(err_code != NRF_SUCCESS)
+//	{
+//		return err_code;
+//	}
+//    
+//    nrf_drv_twi_enable(&m_twi_instance);
+//	
+//	return NRF_SUCCESS;
+//}
 
 
 
@@ -127,11 +131,11 @@ uint32_t nrf_drv_mpu_write_registers(uint8_t reg, uint8_t * p_data, uint32_t len
     xfer_desc.p_primary_buf = twi_tx_buffer;
 
     // Transferring
-    err_code = nrf_drv_twi_xfer(&m_twi_instance, &xfer_desc, 0);
+    err_code = nrf_drv_twi_xfer(&m_twi, &xfer_desc, 0);
 
-    while((!twi_tx_done) && --timeout);
-    if(!timeout) return NRF_ERROR_TIMEOUT;
-    twi_tx_done = false;
+//    while((!twi_tx_done) && --timeout);
+//    if(!timeout) return NRF_ERROR_TIMEOUT;
+//    twi_tx_done = false;
 
     return err_code;
 }
@@ -143,13 +147,13 @@ uint32_t nrf_drv_mpu_write_single_register(uint8_t reg, uint8_t data)
 
     uint8_t packet[2] = {reg, data};
 
-    err_code = nrf_drv_twi_tx(&m_twi_instance, MPU_ADDRESS, packet, 2, false);
+    err_code = nrf_drv_twi_tx(&m_twi, MPU_ADDRESS, packet, 2, false);
     if(err_code != NRF_SUCCESS) return err_code;
 
-    while((!twi_tx_done) && --timeout);
-    if(!timeout) return NRF_ERROR_TIMEOUT;
+//    while((!twi_tx_done) && --timeout);
+//    if(!timeout) return NRF_ERROR_TIMEOUT;
 
-    twi_tx_done = false;
+//    twi_tx_done = false;
 
     return err_code;
 }
@@ -160,20 +164,20 @@ uint32_t nrf_drv_mpu_read_registers(uint8_t reg, uint8_t * p_data, uint32_t leng
     uint32_t err_code;
     uint32_t timeout = MPU_TWI_TIMEOUT;
 
-    err_code = nrf_drv_twi_tx(&m_twi_instance, MPU_ADDRESS, &reg, 1, false);
+    err_code = nrf_drv_twi_tx(&m_twi, MPU_ADDRESS, &reg, 1, false);
     if(err_code != NRF_SUCCESS) return err_code;
 
-    while((!twi_tx_done) && --timeout);
-    if(!timeout) return NRF_ERROR_TIMEOUT;
-    twi_tx_done = false;
+//    while((!twi_tx_done) && --timeout);
+//    if(!timeout) return NRF_ERROR_TIMEOUT;
+//    twi_tx_done = false;
 
-    err_code = nrf_drv_twi_rx(&m_twi_instance, MPU_ADDRESS, p_data, length);
+    err_code = nrf_drv_twi_rx(&m_twi, MPU_ADDRESS, p_data, length);
     if(err_code != NRF_SUCCESS) return err_code;
 
-    timeout = MPU_TWI_TIMEOUT;
-    while((!twi_rx_done) && --timeout);
-    if(!timeout) return NRF_ERROR_TIMEOUT;
-    twi_rx_done = false;
+//    timeout = MPU_TWI_TIMEOUT;
+//    while((!twi_rx_done) && --timeout);
+//    if(!timeout) return NRF_ERROR_TIMEOUT;
+//    twi_rx_done = false;
 
     return err_code;
 }
@@ -187,20 +191,20 @@ uint32_t nrf_drv_mpu_read_magnetometer_registers(uint8_t reg, uint8_t * p_data, 
     uint32_t err_code;
     uint32_t timeout = MPU_TWI_TIMEOUT;
 
-    err_code = nrf_drv_twi_tx(&m_twi_instance, MPU_AK89XX_MAGN_ADDRESS, &reg, 1, false);
+    err_code = nrf_drv_twi_tx(&m_twi, MPU_AK89XX_MAGN_ADDRESS, &reg, 1, false);
     if(err_code != NRF_SUCCESS) return err_code;
 
-    while((!twi_tx_done) && --timeout);
-    if(!timeout) return NRF_ERROR_TIMEOUT;
-    twi_tx_done = false;
+//    while((!twi_tx_done) && --timeout);
+//    if(!timeout) return NRF_ERROR_TIMEOUT;
+//    twi_tx_done = false;
 
-    err_code = nrf_drv_twi_rx(&m_twi_instance, MPU_AK89XX_MAGN_ADDRESS, p_data, length);
+    err_code = nrf_drv_twi_rx(&m_twi, MPU_AK89XX_MAGN_ADDRESS, p_data, length);
     if(err_code != NRF_SUCCESS) return err_code;
 
-    timeout = MPU_TWI_TIMEOUT;
-    while((!twi_rx_done) && --timeout);
-    if(!timeout) return NRF_ERROR_TIMEOUT;
-    twi_rx_done = false;
+//    timeout = MPU_TWI_TIMEOUT;
+//    while((!twi_rx_done) && --timeout);
+//    if(!timeout) return NRF_ERROR_TIMEOUT;
+//    twi_rx_done = false;
 
     return err_code;
 }
@@ -213,13 +217,13 @@ uint32_t nrf_drv_mpu_write_magnetometer_register(uint8_t reg, uint8_t data)
 
     uint8_t packet[2] = {reg, data};
 
-    err_code = nrf_drv_twi_tx(&m_twi_instance, MPU_AK89XX_MAGN_ADDRESS, packet, 2, false);
+    err_code = nrf_drv_twi_tx(&m_twi, MPU_AK89XX_MAGN_ADDRESS, packet, 2, false);
     if(err_code != NRF_SUCCESS) return err_code;
 
-    while((!twi_tx_done) && --timeout);
-    if(!timeout) return NRF_ERROR_TIMEOUT;
+//    while((!twi_tx_done) && --timeout);
+//    if(!timeout) return NRF_ERROR_TIMEOUT;
 
-    twi_tx_done = false;
+//    twi_tx_done = false;
 
     return err_code;
 }
